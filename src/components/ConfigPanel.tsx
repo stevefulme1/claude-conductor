@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { McpServer, McpStatus, ClaudeConfig } from "../types";
 
 interface Props {
@@ -24,9 +25,36 @@ export default function ConfigPanel({ onClose }: Props) {
   const [newArgs, setNewArgs] = useState("");
   const [newAuthToken, setNewAuthToken] = useState("");
   const [newEnvPairs, setNewEnvPairs] = useState("");
+  const [ssoEditing, setSsoEditing] = useState<string | null>(null);
+  const [ssoAuthUrl, setSsoAuthUrl] = useState("");
+  const [ssoTokenUrl, setSsoTokenUrl] = useState("");
+  const [ssoClientId, setSsoClientId] = useState("");
+  const [ssoScopes, setSsoScopes] = useState("");
+  const [ssoInProgress, setSsoInProgress] = useState<string | null>(null);
 
   useEffect(() => {
     loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<{
+      success: boolean;
+      server_name: string;
+      error: string | null;
+    }>("sso-result", (event) => {
+      setSsoInProgress(null);
+      if (event.payload.success) {
+        setSsoEditing(null);
+        reconnectServer(event.payload.server_name);
+      } else {
+        setError(
+          `SSO failed for ${event.payload.server_name}: ${event.payload.error}`
+        );
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   async function loadConfig() {
@@ -100,6 +128,45 @@ export default function ConfigPanel({ onClose }: Props) {
     } catch (e) {
       setError(`Failed to toggle server: ${e}`);
     }
+  }
+
+  async function startSso(serverName: string) {
+    if (
+      !ssoAuthUrl.trim() ||
+      !ssoTokenUrl.trim() ||
+      !ssoClientId.trim()
+    ) {
+      setError("Auth URL, Token URL, and Client ID are required");
+      return;
+    }
+    setSsoInProgress(serverName);
+    try {
+      const result = await invoke<{ auth_url: string; port: number }>(
+        "start_sso",
+        {
+          config: {
+            server_name: serverName,
+            auth_url: ssoAuthUrl.trim(),
+            token_url: ssoTokenUrl.trim(),
+            client_id: ssoClientId.trim(),
+            scopes: ssoScopes.trim() || "openid",
+          },
+        }
+      );
+      window.open(result.auth_url, "_blank");
+    } catch (e) {
+      setSsoInProgress(null);
+      setError(`SSO failed: ${e}`);
+    }
+  }
+
+  async function cancelSso() {
+    try {
+      await invoke("cancel_sso");
+    } catch (_) {
+      // ignore
+    }
+    setSsoInProgress(null);
   }
 
   async function addServer() {
@@ -286,18 +353,37 @@ export default function ConfigPanel({ onClose }: Props) {
                       </button>
 
                       {server.server_type === "http" && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAuthEditing(
-                              isEditingAuth ? null : server.name
-                            );
-                            setAuthToken("");
-                          }}
-                          style={styles.actionBtn}
-                        >
-                          {isEditingAuth ? "Cancel" : "Update Auth"}
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAuthEditing(
+                                isEditingAuth ? null : server.name
+                              );
+                              setAuthToken("");
+                              setSsoEditing(null);
+                            }}
+                            style={styles.actionBtn}
+                          >
+                            {isEditingAuth ? "Cancel" : "Update Auth"}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSsoEditing(
+                                ssoEditing === server.name
+                                  ? null
+                                  : server.name
+                              );
+                              setAuthEditing(null);
+                            }}
+                            style={styles.ssoBtn}
+                          >
+                            {ssoEditing === server.name
+                              ? "Cancel SSO"
+                              : "SSO Login"}
+                          </button>
+                        </>
                       )}
 
                       {server.has_env && (
@@ -398,6 +484,104 @@ export default function ConfigPanel({ onClose }: Props) {
                         >
                           Save & Reconnect
                         </button>
+                      </div>
+                    )}
+
+                    {ssoEditing === server.name && (
+                      <div style={styles.authForm}>
+                        {ssoInProgress === server.name ? (
+                          <div style={styles.ssoWaiting}>
+                            <div style={styles.ssoSpinner} />
+                            <span style={styles.ssoWaitText}>
+                              Waiting for browser login...
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelSso();
+                              }}
+                              style={styles.ssoCancelBtn}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={styles.formLabel}>
+                              OAuth2 / SSO Configuration
+                            </div>
+                            <div style={styles.ssoField}>
+                              <label style={styles.ssoFieldLabel}>
+                                Authorization URL
+                              </label>
+                              <input
+                                value={ssoAuthUrl}
+                                onChange={(e) =>
+                                  setSsoAuthUrl(e.target.value)
+                                }
+                                placeholder="https://idp.example.com/authorize"
+                                style={styles.formInput}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                            <div style={styles.ssoField}>
+                              <label style={styles.ssoFieldLabel}>
+                                Token URL
+                              </label>
+                              <input
+                                value={ssoTokenUrl}
+                                onChange={(e) =>
+                                  setSsoTokenUrl(e.target.value)
+                                }
+                                placeholder="https://idp.example.com/token"
+                                style={styles.formInput}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                            <div style={styles.ssoField}>
+                              <label style={styles.ssoFieldLabel}>
+                                Client ID
+                              </label>
+                              <input
+                                value={ssoClientId}
+                                onChange={(e) =>
+                                  setSsoClientId(e.target.value)
+                                }
+                                placeholder="my-app-client-id"
+                                style={styles.formInput}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                            <div style={styles.ssoField}>
+                              <label style={styles.ssoFieldLabel}>
+                                Scopes
+                              </label>
+                              <input
+                                value={ssoScopes}
+                                onChange={(e) =>
+                                  setSsoScopes(e.target.value)
+                                }
+                                placeholder="openid profile (default: openid)"
+                                style={styles.formInput}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startSso(server.name);
+                              }}
+                              disabled={
+                                !ssoAuthUrl.trim() ||
+                                !ssoTokenUrl.trim() ||
+                                !ssoClientId.trim()
+                              }
+                              style={styles.saveBtn}
+                            >
+                              Authenticate with SSO
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -938,5 +1122,56 @@ const styles: Record<string, any> = {
     background: "var(--accent-muted)",
     color: "var(--accent)",
     fontWeight: 600,
+  },
+  ssoBtn: {
+    fontSize: 11,
+    padding: "4px 10px",
+    borderRadius: "var(--radius-sm)",
+    background: "rgba(99, 102, 241, 0.1)",
+    color: "rgb(129, 140, 248)",
+    border: "1px solid rgba(99, 102, 241, 0.25)",
+    cursor: "pointer",
+    transition: "var(--transition)",
+  },
+  ssoField: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 3,
+    marginBottom: 8,
+  },
+  ssoFieldLabel: {
+    fontSize: 10,
+    color: "var(--text-tertiary)",
+    fontWeight: 500,
+  },
+  ssoWaiting: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 0",
+  },
+  ssoSpinner: {
+    width: 14,
+    height: 14,
+    borderRadius: "50%",
+    border: "2px solid var(--border-subtle)",
+    borderTopColor: "rgb(129, 140, 248)",
+    animation: "spin 0.8s linear infinite",
+    flexShrink: 0,
+  },
+  ssoWaitText: {
+    fontSize: 12,
+    color: "var(--text-secondary)",
+    flex: 1,
+  },
+  ssoCancelBtn: {
+    fontSize: 11,
+    padding: "3px 10px",
+    borderRadius: "var(--radius-sm)",
+    background: "rgba(248, 113, 113, 0.1)",
+    color: "var(--danger)",
+    border: "1px solid rgba(248, 113, 113, 0.2)",
+    cursor: "pointer",
+    flexShrink: 0,
   },
 };

@@ -2,6 +2,7 @@ mod config;
 mod digest;
 mod pty;
 mod sessions;
+mod sso;
 
 use sessions::SessionMeta;
 use std::collections::HashMap;
@@ -106,6 +107,16 @@ fn add_mcp(server: config::NewMcpServer) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn start_sso(app: tauri::AppHandle, config: sso::SsoConfig) -> Result<sso::SsoStartResult, String> {
+    sso::start_sso_flow(app, config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cancel_sso() -> Result<(), String> {
+    sso::cancel_sso_flow().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_session_labels() -> Result<HashMap<String, String>, String> {
     config::get_session_labels().map_err(|e| e.to_string())
 }
@@ -163,6 +174,8 @@ pub fn run() {
             update_mcp_auth,
             toggle_mcp,
             add_mcp,
+            start_sso,
+            cancel_sso,
             get_session_labels,
             set_session_label,
         ])
