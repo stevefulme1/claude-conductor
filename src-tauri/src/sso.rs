@@ -418,3 +418,122 @@ struct SsoExchangeData {
     client_id: String,
     redirect_uri: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_code_verifier_length_and_charset() {
+        let verifier = generate_code_verifier();
+        assert_eq!(verifier.len(), 64);
+        let valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+        for c in verifier.chars() {
+            assert!(valid.contains(c), "invalid char: {c}");
+        }
+    }
+
+    #[test]
+    fn test_code_verifier_is_random() {
+        let a = generate_code_verifier();
+        let b = generate_code_verifier();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_generate_state_length() {
+        let state = generate_state();
+        assert!(state.len() > 20);
+    }
+
+    #[test]
+    fn test_generate_state_is_random() {
+        let a = generate_state();
+        let b = generate_state();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_sha256_base64url_known_vector() {
+        let result = sha256_base64url("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk");
+        assert_eq!(result, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    }
+
+    #[test]
+    fn test_sha256_base64url_empty() {
+        let result = sha256_base64url("");
+        assert!(!result.is_empty());
+        assert!(!result.contains('+'));
+        assert!(!result.contains('/'));
+        assert!(!result.contains('='));
+    }
+
+    #[test]
+    fn test_url_encode_passthrough() {
+        assert_eq!(url_encode("hello"), "hello");
+        assert_eq!(url_encode("a-b_c.d~e"), "a-b_c.d~e");
+    }
+
+    #[test]
+    fn test_url_encode_special_chars() {
+        assert_eq!(url_encode("hello world"), "hello%20world");
+        assert_eq!(url_encode("a&b=c"), "a%26b%3Dc");
+        assert_eq!(url_encode("https://example.com"), "https%3A%2F%2Fexample.com");
+    }
+
+    #[test]
+    fn test_url_decode_basic() {
+        assert_eq!(url_decode("hello%20world"), "hello world");
+        assert_eq!(url_decode("a%26b%3Dc"), "a&b=c");
+    }
+
+    #[test]
+    fn test_url_decode_plus_as_space() {
+        assert_eq!(url_decode("hello+world"), "hello world");
+    }
+
+    #[test]
+    fn test_url_decode_passthrough() {
+        assert_eq!(url_decode("plain"), "plain");
+    }
+
+    #[test]
+    fn test_url_decode_incomplete_percent() {
+        assert_eq!(url_decode("a%2"), "a%2");
+        assert_eq!(url_decode("a%"), "a%");
+    }
+
+    #[test]
+    fn test_url_encode_decode_roundtrip() {
+        let original = "héllo wörld & frïends=true";
+        let encoded = url_encode(original);
+        let decoded = url_decode(&encoded);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_parse_query_string_basic() {
+        let params = parse_query_string("code=abc123&state=xyz");
+        assert_eq!(params.get("code").unwrap(), "abc123");
+        assert_eq!(params.get("state").unwrap(), "xyz");
+    }
+
+    #[test]
+    fn test_parse_query_string_encoded_values() {
+        let params = parse_query_string("error=access_denied&error_description=user%20cancelled");
+        assert_eq!(params.get("error").unwrap(), "access_denied");
+        assert_eq!(params.get("error_description").unwrap(), "user cancelled");
+    }
+
+    #[test]
+    fn test_parse_query_string_empty() {
+        let params = parse_query_string("");
+        assert!(params.is_empty() || params.len() == 1);
+    }
+
+    #[test]
+    fn test_parse_query_string_no_value() {
+        let params = parse_query_string("key_only");
+        assert!(!params.contains_key("key_only"));
+    }
+}

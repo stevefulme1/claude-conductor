@@ -199,7 +199,7 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
         };
     }
 
-    let base = cmd.split('/').last().unwrap_or(cmd);
+    let base = cmd.split('/').next_back().unwrap_or(cmd);
     logs.push(format!("Command: {cmd}"));
 
     let on_path = std::process::Command::new("which")
