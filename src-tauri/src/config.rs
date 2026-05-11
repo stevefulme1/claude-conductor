@@ -4,6 +4,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+static CONFIG_WRITE_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 #[derive(Debug, Clone, Serialize)]
 pub struct McpServer {
     pub name: String,
@@ -46,6 +51,16 @@ fn settings_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".claude")
         .join("settings.json")
+}
+
+fn write_config_file(path: &PathBuf, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fs::write(path, content)?;
+    #[cfg(unix)]
+    {
+        let perms = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(path, perms)?;
+    }
+    Ok(())
 }
 
 fn read_raw_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -208,10 +223,20 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
         logs.push(format!("Args: {}", server.args.join(" ")));
     }
 
-    let raw_config = read_raw_config().unwrap_or_default();
-    let env_obj = raw_config
+    let raw_config = match read_raw_config() {
+        Ok(c) => c,
+        Err(e) => {
+            logs.push(format!("✗ Failed to read config: {e}"));
+            return McpStatus {
+                reachable: false,
+                logs,
+            };
+        }
+    };
+    let server_config = raw_config
         .get("mcpServers")
-        .and_then(|s| s.get(&server.name))
+        .and_then(|s| s.get(&server.name));
+    let env_obj = server_config
         .and_then(|s| s.get("env"))
         .and_then(|v| v.as_object());
 
@@ -256,17 +281,24 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
 
     match spawn_cmd.spawn() {
         Ok(mut child) => {
+            let mut stdin_ok = false;
             if let Some(mut stdin) = child.stdin.take() {
                 use std::io::Write;
                 let init_msg = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"conductor","version":"0.2.0"}}}"#;
                 let header = format!("Content-Length: {}\r\n\r\n{}", init_msg.len(), init_msg);
-                let _ = stdin.write_all(header.as_bytes());
-                let _ = stdin.flush();
+                match stdin.write_all(header.as_bytes()).and_then(|_| stdin.flush()) {
+                    Ok(()) => stdin_ok = true,
+                    Err(e) => {
+                        logs.push(format!("✗ Failed to send initialize message: {e}"));
+                    }
+                }
             }
 
             std::thread::sleep(Duration::from_secs(2));
 
-            let _ = child.kill();
+            if let Err(e) = child.kill() {
+                logs.push(format!("⚠ Could not terminate test process: {e}"));
+            }
             let output = child.wait_with_output();
 
             match output {
@@ -294,10 +326,16 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
                             reachable: false,
                             logs,
                         }
-                    } else {
-                        logs.push("✓ Server process started (no error output)".into());
+                    } else if !stdin_ok {
                         McpStatus {
-                            reachable: true,
+                            reachable: false,
+                            logs,
+                        }
+                    } else {
+                        logs.push("⚠ Server started but did not respond to MCP initialize".into());
+                        logs.push("The process may be hanging or may not be an MCP server".into());
+                        McpStatus {
+                            reachable: false,
                             logs,
                         }
                     }
@@ -337,7 +375,16 @@ fn check_http_server(server: &McpServer) -> McpStatus {
 
     logs.push(format!("URL: {url}"));
 
-    let raw_config = read_raw_config().unwrap_or_default();
+    let raw_config = match read_raw_config() {
+        Ok(c) => c,
+        Err(e) => {
+            logs.push(format!("✗ Failed to read config: {e}"));
+            return McpStatus {
+                reachable: false,
+                logs,
+            };
+        }
+    };
     let server_config = raw_config
         .get("mcpServers")
         .and_then(|s| s.get(&server.name));
@@ -352,16 +399,13 @@ fn check_http_server(server: &McpServer) -> McpStatus {
         logs.push("✓ Authorization header configured".into());
     }
 
-    let mut curl_cmd = std::process::Command::new("curl");
-    curl_cmd
-        .arg("-sf")
-        .arg("--max-time")
-        .arg("5")
-        .arg("-o")
-        .arg("/dev/null")
-        .arg("-w")
-        .arg("%{http_code}")
-        .arg(url);
+    let mut curl_config = String::new();
+    curl_config.push_str(&format!("url = \"{url}\"\n"));
+    curl_config.push_str("silent\n");
+    curl_config.push_str("fail\n");
+    curl_config.push_str("max-time = 5\n");
+    curl_config.push_str("output = /dev/null\n");
+    curl_config.push_str("write-out = \"%{http_code}\"\n");
 
     if let Some(headers) = server_config
         .and_then(|s| s.get("headers"))
@@ -369,53 +413,89 @@ fn check_http_server(server: &McpServer) -> McpStatus {
     {
         for (key, val) in headers {
             if let Some(v) = val.as_str() {
-                curl_cmd.arg("-H").arg(format!("{key}: {v}"));
+                curl_config.push_str(&format!("header = \"{key}: {v}\"\n"));
             }
         }
     }
 
+    let mut curl_cmd = std::process::Command::new("curl");
+    curl_cmd.arg("--config").arg("-");
+    curl_cmd.stdin(std::process::Stdio::piped());
+    curl_cmd.stdout(std::process::Stdio::piped());
     curl_cmd.stderr(std::process::Stdio::piped());
 
-    match curl_cmd.output() {
-        Ok(output) => {
-            let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr);
+    match curl_cmd.spawn() {
+        Ok(mut child) => {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(curl_config.as_bytes());
+            }
 
-            match code.as_str() {
-                "200" | "204" | "301" | "302" | "405" => {
-                    logs.push(format!("✓ Server reachable (HTTP {code})"));
-                    McpStatus {
-                        reachable: true,
-                        logs,
+            match child.wait_with_output() {
+                Ok(output) => {
+                    let code =
+                        String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+
+                    match code.as_str() {
+                        "200" | "204" | "301" | "302" | "405" => {
+                            logs.push(format!("✓ Server reachable (HTTP {code})"));
+                            McpStatus {
+                                reachable: true,
+                                logs,
+                            }
+                        }
+                        "401" | "403" => {
+                            logs.push(format!(
+                                "✗ Authentication failed (HTTP {code})"
+                            ));
+                            if !has_auth_header {
+                                logs.push(
+                                    "No Authorization header configured — add credentials"
+                                        .into(),
+                                );
+                            } else {
+                                logs.push(
+                                    "Check that your auth token is valid and not expired"
+                                        .into(),
+                                );
+                            }
+                            McpStatus {
+                                reachable: false,
+                                logs,
+                            }
+                        }
+                        "" => {
+                            let err_msg = stderr
+                                .lines()
+                                .take(3)
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            logs.push(format!("✗ Connection failed: {err_msg}"));
+                            if url.starts_with("https://") {
+                                logs.push(
+                                    "Check network connectivity and DNS resolution"
+                                        .into(),
+                                );
+                            }
+                            McpStatus {
+                                reachable: false,
+                                logs,
+                            }
+                        }
+                        _ => {
+                            logs.push(format!(
+                                "✗ Unexpected response (HTTP {code})"
+                            ));
+                            McpStatus {
+                                reachable: false,
+                                logs,
+                            }
+                        }
                     }
                 }
-                "401" | "403" => {
-                    logs.push(format!("✗ Authentication failed (HTTP {code})"));
-                    if !has_auth_header {
-                        logs.push(
-                            "No Authorization header configured — add credentials".into(),
-                        );
-                    } else {
-                        logs.push("Check that your auth token is valid and not expired".into());
-                    }
-                    McpStatus {
-                        reachable: false,
-                        logs,
-                    }
-                }
-                "" => {
-                    let err_msg = stderr.lines().take(3).collect::<Vec<_>>().join("; ");
-                    logs.push(format!("✗ Connection failed: {err_msg}"));
-                    if url.starts_with("https://") {
-                        logs.push("Check network connectivity and DNS resolution".into());
-                    }
-                    McpStatus {
-                        reachable: false,
-                        logs,
-                    }
-                }
-                _ => {
-                    logs.push(format!("✗ Unexpected response (HTTP {code})"));
+                Err(e) => {
+                    logs.push(format!("✗ Failed to collect output: {e}"));
                     McpStatus {
                         reachable: false,
                         logs,
@@ -472,6 +552,7 @@ pub fn verify_mcp_tools() -> Result<HashMap<String, McpStatus>, Box<dyn std::err
 }
 
 pub fn update_mcp_env(update: McpEnvUpdate) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = CONFIG_WRITE_LOCK.lock();
     let cfg_path = config_path();
     let data = fs::read_to_string(&cfg_path)?;
     let mut parsed: serde_json::Value = serde_json::from_str(&data)?;
@@ -487,14 +568,24 @@ pub fn update_mcp_env(update: McpEnvUpdate) -> Result<(), Box<dyn std::error::Er
         .entry("env")
         .or_insert_with(|| serde_json::json!({}));
 
+    let non_empty: HashMap<_, _> = update
+        .env_vars
+        .iter()
+        .filter(|(_, v)| !v.trim().is_empty())
+        .collect();
+
+    if non_empty.is_empty() {
+        return Err("No non-empty values provided".into());
+    }
+
     if let Some(env_obj) = env.as_object_mut() {
-        for (key, value) in &update.env_vars {
+        for (key, value) in non_empty {
             env_obj.insert(key.clone(), serde_json::Value::String(value.clone()));
         }
     }
 
     let output = serde_json::to_string_pretty(&parsed)?;
-    fs::write(&cfg_path, output)?;
+    write_config_file(&cfg_path, &output)?;
     Ok(())
 }
 
@@ -502,6 +593,7 @@ pub fn update_mcp_auth_header(
     server_name: &str,
     token: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = CONFIG_WRITE_LOCK.lock();
     let cfg_path = config_path();
     let data = fs::read_to_string(&cfg_path)?;
     let mut parsed: serde_json::Value = serde_json::from_str(&data)?;
@@ -524,7 +616,7 @@ pub fn update_mcp_auth_header(
     }
 
     let output = serde_json::to_string_pretty(&parsed)?;
-    fs::write(&cfg_path, output)?;
+    write_config_file(&cfg_path, &output)?;
     Ok(())
 }
 
@@ -532,6 +624,7 @@ pub fn toggle_mcp_server(
     server_name: &str,
     enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = CONFIG_WRITE_LOCK.lock();
     let cfg_path = config_path();
     let data = fs::read_to_string(&cfg_path)?;
     let mut parsed: serde_json::Value = serde_json::from_str(&data)?;
@@ -543,37 +636,46 @@ pub fn toggle_mcp_server(
 
     if enabled {
         let disabled_path = config_path().with_extension("disabled-mcps.json");
-        if disabled_path.exists() {
-            let disabled_data = fs::read_to_string(&disabled_path)?;
-            let disabled: serde_json::Value = serde_json::from_str(&disabled_data)?;
-            if let Some(server_val) = disabled.get(server_name) {
-                servers.insert(server_name.to_string(), server_val.clone());
+        if !disabled_path.exists() {
+            return Err(format!(
+                "Cannot re-enable '{server_name}': no disabled servers file found"
+            )
+            .into());
+        }
+        let disabled_data = fs::read_to_string(&disabled_path)?;
+        let disabled: serde_json::Value = serde_json::from_str(&disabled_data)?;
+        let server_val = disabled
+            .get(server_name)
+            .ok_or_else(|| {
+                format!("Server '{server_name}' not found in disabled servers")
+            })?
+            .clone();
 
-                let mut disabled_mut: serde_json::Value =
-                    serde_json::from_str(&disabled_data)?;
-                if let Some(obj) = disabled_mut.as_object_mut() {
-                    obj.remove(server_name);
-                }
-                fs::write(&disabled_path, serde_json::to_string_pretty(&disabled_mut)?)?;
-            }
+        servers.insert(server_name.to_string(), server_val);
+
+        let mut disabled_mut: serde_json::Value =
+            serde_json::from_str(&disabled_data)?;
+        if let Some(obj) = disabled_mut.as_object_mut() {
+            obj.remove(server_name);
         }
+        write_config_file(&disabled_path, &serde_json::to_string_pretty(&disabled_mut)?)?;
+    } else if let Some(server_val) = servers.remove(server_name) {
+        let disabled_path = config_path().with_extension("disabled-mcps.json");
+        let mut disabled: serde_json::Value = if disabled_path.exists() {
+            let d = fs::read_to_string(&disabled_path)?;
+            serde_json::from_str(&d)?
+        } else {
+            serde_json::json!({})
+        };
+        if let Some(obj) = disabled.as_object_mut() {
+            obj.insert(server_name.to_string(), server_val);
+        }
+        write_config_file(&disabled_path, &serde_json::to_string_pretty(&disabled)?)?;
     } else {
-        if let Some(server_val) = servers.remove(server_name) {
-            let disabled_path = config_path().with_extension("disabled-mcps.json");
-            let mut disabled: serde_json::Value = if disabled_path.exists() {
-                let d = fs::read_to_string(&disabled_path)?;
-                serde_json::from_str(&d)?
-            } else {
-                serde_json::json!({})
-            };
-            if let Some(obj) = disabled.as_object_mut() {
-                obj.insert(server_name.to_string(), server_val);
-            }
-            fs::write(&disabled_path, serde_json::to_string_pretty(&disabled)?)?;
-        }
+        return Err(format!("Server '{server_name}' not found in config").into());
     }
 
     let output = serde_json::to_string_pretty(&parsed)?;
-    fs::write(&cfg_path, output)?;
+    write_config_file(&cfg_path, &output)?;
     Ok(())
 }

@@ -1,27 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-
-interface McpServer {
-  name: string;
-  server_type: string;
-  command_or_url: string;
-  args: string[];
-  has_env: boolean;
-  has_auth: boolean;
-  env_keys: string[];
-}
-
-interface McpStatus {
-  reachable: boolean;
-  logs: string[];
-}
-
-interface ClaudeConfig {
-  mcp_servers: McpServer[];
-  plugins: string[];
-  model: string;
-  config_paths: string[];
-}
+import { McpServer, McpStatus, ClaudeConfig } from "../types";
 
 interface Props {
   onClose: () => void;
@@ -45,32 +24,35 @@ export default function ConfigPanel({ onClose }: Props) {
 
   async function loadConfig() {
     try {
-      setCheckingAll(true);
-      const [cfg, status] = await Promise.all([
-        invoke<ClaudeConfig>("get_config"),
-        invoke<Record<string, McpStatus>>("verify_mcp"),
-      ]);
+      const cfg = await invoke<ClaudeConfig>("get_config");
       setConfig(cfg);
-      setMcpStatus(status);
       setError(null);
     } catch (e) {
       setError(`${e}`);
+      return;
+    }
+    setCheckingAll(true);
+    try {
+      const status = await invoke<Record<string, McpStatus>>("verify_mcp");
+      setMcpStatus(status);
+    } catch (e) {
+      setError(`MCP verification failed: ${e}`);
     } finally {
       setCheckingAll(false);
     }
   }
 
-  async function reconnectServer(name: string) {
+  async function reconnectServer(name: string): Promise<McpStatus | null> {
     setReconnecting(name);
     try {
       const status = await invoke<McpStatus>("verify_mcp_single", { name });
       setMcpStatus((prev) => ({ ...prev, [name]: status }));
       setExpandedServer(name);
+      return status;
     } catch (e) {
-      setMcpStatus((prev) => ({
-        ...prev,
-        [name]: { reachable: false, logs: [`Error: ${e}`] },
-      }));
+      const status: McpStatus = { reachable: false, logs: [`Error: ${e}`] };
+      setMcpStatus((prev) => ({ ...prev, [name]: status }));
+      return status;
     } finally {
       setReconnecting(null);
     }
@@ -79,9 +61,11 @@ export default function ConfigPanel({ onClose }: Props) {
   async function saveAuth(serverName: string) {
     try {
       await invoke("update_mcp_auth", { serverName, token: authToken });
-      setAuthEditing(null);
-      setAuthToken("");
-      await reconnectServer(serverName);
+      const status = await reconnectServer(serverName);
+      if (status?.reachable) {
+        setAuthEditing(null);
+        setAuthToken("");
+      }
     } catch (e) {
       setError(`Failed to save auth: ${e}`);
     }
@@ -92,9 +76,11 @@ export default function ConfigPanel({ onClose }: Props) {
       await invoke("update_mcp_env", {
         update: { server_name: serverName, env_vars: envValues },
       });
-      setEnvEditing(null);
-      setEnvValues({});
-      await reconnectServer(serverName);
+      const status = await reconnectServer(serverName);
+      if (status?.reachable) {
+        setEnvEditing(null);
+        setEnvValues({});
+      }
     } catch (e) {
       setError(`Failed to save env: ${e}`);
     }

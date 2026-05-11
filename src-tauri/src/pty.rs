@@ -53,15 +53,15 @@ fn get_shell_env() -> HashMap<String, String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
     let env_map = match Command::new(&shell)
-        .args(["-l", "-c", "env"])
+        .args(["-l", "-c", "env -0"])
         .output()
     {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let mut map = HashMap::new();
-            for line in stdout.lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    if !key.is_empty() {
+            for entry in stdout.split('\0') {
+                if let Some((key, value)) = entry.split_once('=') {
+                    if !key.is_empty() && !key.contains('\n') {
                         map.insert(key.to_string(), value.to_string());
                     }
                 }
@@ -154,7 +154,10 @@ pub fn spawn_pty(
 
                     if boundary > 0 {
                         let text = String::from_utf8_lossy(&buf[..boundary]).to_string();
-                        let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
+                        if app_clone.emit(&format!("pty-output-{}", sid), text).is_err() {
+                            log::warn!("Event channel closed for session {}, stopping reader", sid);
+                            break;
+                        }
                     }
 
                     if boundary < total {
@@ -169,7 +172,9 @@ pub fn spawn_pty(
 
             if !carry.is_empty() && carry.len() >= 4 {
                 let text = String::from_utf8_lossy(&carry).to_string();
-                let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
+                if app_clone.emit(&format!("pty-output-{}", sid), text).is_err() {
+                    break;
+                }
                 carry.clear();
             }
         }
@@ -179,11 +184,16 @@ pub fn spawn_pty(
             let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
         }
 
-        let exit_status = child.wait().ok();
-        let code = exit_status
-            .map(|s| s.exit_code() as i32)
-            .unwrap_or(-1);
-        let _ = app_clone.emit(&format!("pty-exit-{}", sid), code);
+        let exit_status = match child.wait() {
+            Ok(status) => status.exit_code() as i32,
+            Err(e) => {
+                log::warn!("Failed to wait for child process {}: {}", sid, e);
+                -1
+            }
+        };
+        if let Err(e) = app_clone.emit(&format!("pty-exit-{}", sid), exit_status) {
+            log::warn!("Failed to emit exit event for session {}: {}", sid, e);
+        }
     });
 
     let mut guard = PTY_MAP.lock();
