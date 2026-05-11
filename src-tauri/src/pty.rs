@@ -45,14 +45,38 @@ fn find_utf8_boundary(buf: &[u8], len: usize) -> usize {
 }
 
 fn resolve_executable(name: &str, env: &HashMap<String, String>) -> Option<String> {
+    let well_known = [
+        dirs::home_dir().map(|h| h.join(".local/bin").join(name)),
+        dirs::home_dir().map(|h| h.join(format!(".nvm/versions/node/current/bin/{name}"))),
+        Some(std::path::PathBuf::from(format!("/usr/local/bin/{name}"))),
+        Some(std::path::PathBuf::from(format!("/opt/homebrew/bin/{name}"))),
+    ];
+
     if let Some(path_var) = env.get("PATH") {
         for dir in path_var.split(':') {
-            let candidate = format!("{}/{}", dir, name);
-            if std::path::Path::new(&candidate).is_file() {
-                return Some(candidate);
+            let candidate = std::path::PathBuf::from(dir).join(name);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
             }
         }
     }
+
+    for path in well_known.iter().flatten() {
+        if path.is_file() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    if let Ok(output) = Command::new("/bin/sh")
+        .args(["-l", "-c", &format!("which {name}")])
+        .output()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() && std::path::Path::new(&path).is_file() {
+            return Some(path);
+        }
+    }
+
     None
 }
 
