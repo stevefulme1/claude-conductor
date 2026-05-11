@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SessionMeta } from "../types";
 import SessionCard from "./SessionCard";
+import ConfigPanel from "./ConfigPanel";
 
 interface Props {
   activeSession: SessionMeta | null;
@@ -50,6 +51,7 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
 
   useEffect(() => {
     loadSessions();
@@ -199,20 +201,41 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
         )}
       </div>
 
+      {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
+
       <div style={styles.footer}>
-        <button onClick={loadSessions} style={styles.refreshBtn}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+        <div style={styles.footerRow}>
+          <button onClick={loadSessions} style={styles.refreshBtn}>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3" />
+            </svg>
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            style={styles.settingsBtn}
+            title="Settings"
           >
-            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3" />
-          </svg>
-          Refresh
-        </button>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -361,6 +384,12 @@ const styles: Record<string, React.CSSProperties> = {
   footer: {
     padding: "10px 16px",
     borderTop: "1px solid var(--border-subtle)",
+    position: "relative" as const,
+  },
+  footerRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
   },
   refreshBtn: {
     display: "flex",
@@ -370,8 +399,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "var(--text-secondary)",
     borderRadius: "var(--radius-sm)",
-    width: "100%",
+    flex: 1,
     justifyContent: "center",
     transition: "var(--transition)",
+  },
+  settingsBtn: {
+    padding: 6,
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-tertiary)",
+    transition: "var(--transition)",
+    flexShrink: 0,
   },
 };

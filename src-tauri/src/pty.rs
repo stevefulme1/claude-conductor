@@ -2,6 +2,7 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -14,6 +15,7 @@ struct PtyInstance {
 }
 
 static PTY_MAP: Mutex<Option<HashMap<String, PtyInstance>>> = Mutex::new(None);
+static SHELL_ENV: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
 fn validate_size(cols: u16, rows: u16) -> Result<(), String> {
     if cols == 0 || cols > 500 {
@@ -42,6 +44,40 @@ fn find_utf8_boundary(buf: &[u8], len: usize) -> usize {
     len
 }
 
+fn get_shell_env() -> HashMap<String, String> {
+    let mut guard = SHELL_ENV.lock();
+    if let Some(ref cached) = *guard {
+        return cached.clone();
+    }
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+
+    let env_map = match Command::new(&shell)
+        .args(["-l", "-c", "env"])
+        .output()
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut map = HashMap::new();
+            for line in stdout.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    if !key.is_empty() {
+                        map.insert(key.to_string(), value.to_string());
+                    }
+                }
+            }
+            map
+        }
+        Err(e) => {
+            log::warn!("Failed to capture shell environment: {}", e);
+            std::env::vars().collect()
+        }
+    };
+
+    *guard = Some(env_map.clone());
+    env_map
+}
+
 pub fn spawn_pty(
     app: AppHandle,
     session_id: String,
@@ -62,10 +98,17 @@ pub fn spawn_pty(
         })
         .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
+    let shell_env = get_shell_env();
+
     let mut cmd = CommandBuilder::new("claude");
     cmd.arg("--resume");
     cmd.arg(&claude_session_id);
     cmd.cwd(&cwd);
+
+    for (key, value) in &shell_env {
+        cmd.env(key, value);
+    }
+
     cmd.env("TERM", "xterm-256color");
     cmd.env("LANG", "en_US.UTF-8");
     cmd.env("LC_ALL", "en_US.UTF-8");

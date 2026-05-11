@@ -1,8 +1,10 @@
+mod config;
 mod digest;
 mod pty;
 mod sessions;
 
 use sessions::SessionMeta;
+use std::collections::HashMap;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -68,6 +70,16 @@ fn get_digest() -> Result<String, String> {
     digest::generate_digest().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_config() -> Result<config::ClaudeConfig, String> {
+    config::read_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn verify_mcp() -> Result<HashMap<String, bool>, String> {
+    config::verify_mcp_tools().map_err(|e| e.to_string())
+}
+
 fn start_digest_timer() {
     thread::spawn(|| {
         loop {
@@ -109,6 +121,8 @@ pub fn run() {
             kill_terminal,
             refresh_digest,
             get_digest,
+            get_config,
+            verify_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
