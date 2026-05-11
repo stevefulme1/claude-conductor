@@ -1,12 +1,22 @@
 use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::time::SystemTime;
 
 const MAX_SESSIONS: usize = 500;
 const MAX_LINES: usize = 200;
 const MAX_CONSECUTIVE_FAILURES: usize = 10;
+
+struct CachedEntry {
+    mtime: SystemTime,
+    meta: SessionMeta,
+}
+
+static SESSION_CACHE: Mutex<Option<HashMap<String, CachedEntry>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
@@ -154,11 +164,14 @@ pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error
 }
 
 fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<dyn std::error::Error>> {
-    let mut results = vec![];
-
     if !projects_dir.exists() {
-        return Ok(results);
+        return Ok(vec![]);
     }
+
+    let mut guard = SESSION_CACHE.lock();
+    let cache = guard.get_or_insert_with(HashMap::new);
+    let mut seen_keys = Vec::new();
+    let mut results = vec![];
 
     for project_entry in fs::read_dir(projects_dir)? {
         let project_entry = match project_entry {
@@ -203,17 +216,26 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
                 continue;
             }
 
-            let session_id = fname.trim_end_matches(".jsonl").to_string();
+            let file_path_str = file.path().to_string_lossy().to_string();
             let modified = match file.metadata().and_then(|m| m.modified()) {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            let dt: DateTime<Utc> = modified.into();
-            let file_path = file.path().to_string_lossy().to_string();
 
+            seen_keys.push(file_path_str.clone());
+
+            if let Some(cached) = cache.get(&file_path_str) {
+                if cached.mtime == modified {
+                    results.push(cached.meta.clone());
+                    continue;
+                }
+            }
+
+            let session_id = fname.trim_end_matches(".jsonl").to_string();
+            let dt: DateTime<Utc> = modified.into();
             let (first_message, cwd, message_count) = extract_session_summary(&file.path());
 
-            results.push(SessionMeta {
+            let meta = SessionMeta {
                 session_id,
                 project_path: project_name.clone(),
                 project_display: display.clone(),
@@ -225,10 +247,15 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
                     cwd
                 },
                 message_count,
-                file_path,
-            });
+                file_path: file_path_str.clone(),
+            };
+
+            cache.insert(file_path_str, CachedEntry { mtime: modified, meta: meta.clone() });
+            results.push(meta);
         }
     }
+
+    cache.retain(|k, _| seen_keys.contains(k));
 
     results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
     results.truncate(MAX_SESSIONS);
