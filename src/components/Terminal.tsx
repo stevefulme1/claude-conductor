@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Command, type Child } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
 import { SessionMeta } from "../types";
 
@@ -12,13 +13,13 @@ interface Props {
 
 export default function Terminal({ session }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
-  const childRef = useRef<Child | null>(null);
-  const mountedRef = useRef(true);
   const [status, setStatus] = useState<"idle" | "running" | "exited">("idle");
 
   useEffect(() => {
-    mountedRef.current = true;
     if (!termRef.current) return;
+
+    let mounted = true;
+    const unlisteners: UnlistenFn[] = [];
 
     const term = new XTerm({
       theme: {
@@ -62,92 +63,89 @@ export default function Terminal({ session }: Props) {
     fit.fit();
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => fit.fit());
+      requestAnimationFrame(() => {
+        fit.fit();
+        if (mounted) {
+          invoke("resize_terminal", {
+            sessionId: session.session_id,
+            cols: term.cols,
+            rows: term.rows,
+          }).catch(() => {});
+        }
+      });
     });
     resizeObserver.observe(termRef.current);
 
-    launchClaude(term, session);
+    async function start() {
+      setStatus("running");
+
+      term.writeln(
+        `\x1b[38;2;212;132;90m▸ Resuming session in ${session.cwd}\x1b[0m`
+      );
+      term.writeln(
+        `\x1b[38;2;102;102;102m  ${session.first_message}\x1b[0m`
+      );
+      term.writeln("");
+
+      const outputUnlisten = await listen<string>(
+        `pty-output-${session.session_id}`,
+        (event) => {
+          if (mounted) term.write(event.payload);
+        }
+      );
+      unlisteners.push(outputUnlisten);
+
+      const exitUnlisten = await listen<number>(
+        `pty-exit-${session.session_id}`,
+        (event) => {
+          if (!mounted) return;
+          setStatus("exited");
+          term.writeln("");
+          term.writeln(
+            `\x1b[38;2;102;102;102m▸ Session ended (exit ${event.payload})\x1b[0m`
+          );
+        }
+      );
+      unlisteners.push(exitUnlisten);
+
+      const inputDisposable = term.onData((data) => {
+        invoke("write_terminal", {
+          sessionId: session.session_id,
+          data,
+        }).catch(() => {});
+      });
+
+      try {
+        await invoke("spawn_terminal", {
+          sessionId: session.session_id,
+          claudeSessionId: session.session_id,
+          cwd: session.cwd,
+          cols: term.cols,
+          rows: term.rows,
+        });
+      } catch (err) {
+        if (!mounted) return;
+        setStatus("exited");
+        term.writeln(`\x1b[31mFailed to launch claude: ${err}\x1b[0m`);
+        term.writeln(
+          "\x1b[38;2;102;102;102mMake sure 'claude' is in your PATH.\x1b[0m"
+        );
+        inputDisposable.dispose();
+      }
+    }
+
+    start();
 
     return () => {
-      mountedRef.current = false;
+      mounted = false;
       resizeObserver.disconnect();
-      if (childRef.current) {
-        childRef.current.kill().catch(() => {});
-        childRef.current = null;
-      }
+      unlisteners.forEach((fn) => fn());
+      invoke("kill_terminal", { sessionId: session.session_id }).catch(
+        () => {}
+      );
       term.dispose();
     };
   }, [session.session_id]);
-
-  async function launchClaude(term: XTerm, sess: SessionMeta) {
-    setStatus("running");
-
-    term.writeln(
-      `\x1b[38;2;212;132;90m▸ Resuming session in ${sess.cwd}\x1b[0m`
-    );
-    term.writeln(
-      `\x1b[38;2;102;102;102m  ${sess.first_message}\x1b[0m`
-    );
-    term.writeln("");
-
-    try {
-      const cmd = Command.create("claude", ["--resume", sess.session_id], {
-        cwd: sess.cwd,
-        env: { TERM: "xterm-256color" },
-      });
-
-      cmd.on("close", (data) => {
-        if (!mountedRef.current) return;
-        setStatus("exited");
-        term.writeln("");
-        term.writeln(
-          `\x1b[38;2;102;102;102m▸ Session ended (exit ${data.code})\x1b[0m`
-        );
-      });
-
-      cmd.on("error", (err) => {
-        if (!mountedRef.current) return;
-        setStatus("exited");
-        term.writeln(`\x1b[31mError: ${err}\x1b[0m`);
-      });
-
-      cmd.stdout.on("data", (data) => {
-        if (!mountedRef.current) return;
-        term.write(data);
-      });
-
-      cmd.stderr.on("data", (data) => {
-        if (!mountedRef.current) return;
-        term.write(data);
-      });
-
-      const child = await cmd.spawn();
-
-      if (!mountedRef.current) {
-        child.kill().catch(() => {});
-        return;
-      }
-
-      childRef.current = child;
-
-      const inputDisposable = term.onData((data) => {
-        child.write(data).catch(() => {});
-      });
-
-      const originalCleanup = term.dispose.bind(term);
-      term.dispose = () => {
-        inputDisposable.dispose();
-        originalCleanup();
-      };
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setStatus("exited");
-      term.writeln(`\x1b[31mFailed to launch claude: ${err}\x1b[0m`);
-      term.writeln(
-        "\x1b[38;2;102;102;102mMake sure 'claude' is in your PATH.\x1b[0m"
-      );
-    }
-  }
 
   return (
     <div style={styles.wrapper}>

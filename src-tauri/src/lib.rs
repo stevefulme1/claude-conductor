@@ -1,3 +1,4 @@
+mod pty;
 mod sessions;
 
 use sessions::SessionMeta;
@@ -24,6 +25,34 @@ fn delete_session(file_path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| format!("Failed to delete session: {e}"))
 }
 
+#[tauri::command]
+fn spawn_terminal(
+    app: tauri::AppHandle,
+    session_id: String,
+    claude_session_id: String,
+    cwd: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty::spawn_pty(app, session_id, claude_session_id, cwd, cols, rows)
+}
+
+#[tauri::command]
+fn write_terminal(session_id: String, data: String) -> Result<(), String> {
+    pty::write_pty(&session_id, &data)
+}
+
+#[tauri::command]
+fn resize_terminal(session_id: String, cols: u16, rows: u16) -> Result<(), String> {
+    pty::resize_pty(&session_id, cols, rows)
+}
+
+#[tauri::command]
+fn kill_terminal(session_id: String) -> Result<(), String> {
+    pty::kill_pty(&session_id);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,6 +73,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_sessions,
             delete_session,
+            spawn_terminal,
+            write_terminal,
+            resize_terminal,
+            kill_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
