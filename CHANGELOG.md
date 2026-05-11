@@ -2,6 +2,29 @@
 
 All notable changes to Claude Conductor are documented in this file.
 
+## [0.3.0] - 2026-05-11
+
+### Added
+- **OAuth2 SSO Authentication** — HTTP MCP servers can now authenticate via OAuth2 Authorization Code flow with PKCE. Opens a browser to the identity provider, receives the callback on a local port, exchanges the auth code for a token, and saves it to the config automatically.
+- **SSO Configuration UI** — New "SSO Login" button on HTTP MCP servers with fields for Authorization URL, Token URL, Client ID, and Scopes. Shows a waiting spinner with cancel support while the browser login completes.
+- **MCP Server Creation** — Add new MCP servers (stdio or HTTP) directly from the Settings panel with support for command/URL, arguments, environment variables, and auth tokens.
+- **Session Naming** — Rename sessions with a custom label via the pencil icon on hover. Labels are stored in `~/.claude/conductor-labels.json` and persist across restarts.
+- **Label-Aware Search** — Session search now matches against custom labels in addition to project paths and first messages.
+
+### Security
+- **Cryptographic PKCE** — Code verifier generated with `getrandom` (OS entropy) instead of timestamp-seeded PRNG. Code challenge computed with `sha2` crate instead of shelling out to openssl, eliminating command injection risk.
+- **OAuth State Validation** — Random per-flow `state` parameter generated and validated on callback to prevent CSRF attacks.
+- **Token Response Sanitization** — Raw IdP responses no longer leak into UI error messages; generic error shown to user while details are logged server-side.
+- **Popup Blocker Detection** — SSO flow detects when the browser blocks the authentication popup and shows an actionable error instead of spinning indefinitely.
+- **URL Percent-Decoding** — Query string parser now properly decodes percent-encoded values from IdP callbacks.
+- **Curl Error Propagation** — Token exchange uses `-sS` flag and checks exit status, surfacing DNS/TLS/connection errors instead of showing "invalid response".
+- **Listener Failure Recovery** — SSO callback listener emits error events and cleans up state on all failure paths, preventing UI from hanging on spinner.
+
+### Fixed
+- **SSO Form State Bleed** — SSO configuration fields are now cleared when switching between servers, preventing values from one server leaking into another's form.
+- **Config File Race Conditions** — All config writes protected by a mutex with 0600 file permissions.
+- **MCP Health Check False Positives** — Stdio servers verified via actual MCP initialize handshake; HTTP servers checked with real requests through curl stdin.
+
 ## [0.2.0] - 2026-05-11
 
 ### Added

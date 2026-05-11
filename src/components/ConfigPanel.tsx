@@ -153,7 +153,13 @@ export default function ConfigPanel({ onClose }: Props) {
           },
         }
       );
-      window.open(result.auth_url, "_blank");
+      const popup = window.open(result.auth_url, "_blank");
+      if (!popup) {
+        setSsoInProgress(null);
+        await invoke("cancel_sso").catch(() => {});
+        setError("Browser blocked the SSO popup. Allow popups and try again.");
+        return;
+      }
     } catch (e) {
       setSsoInProgress(null);
       setError(`SSO failed: ${e}`);
@@ -163,8 +169,8 @@ export default function ConfigPanel({ onClose }: Props) {
   async function cancelSso() {
     try {
       await invoke("cancel_sso");
-    } catch (_) {
-      // ignore
+    } catch (e) {
+      console.error("Failed to cancel SSO flow:", e);
     }
     setSsoInProgress(null);
   }
@@ -370,11 +376,15 @@ export default function ConfigPanel({ onClose }: Props) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSsoEditing(
-                                ssoEditing === server.name
-                                  ? null
-                                  : server.name
-                              );
+                              if (ssoEditing === server.name) {
+                                setSsoEditing(null);
+                              } else {
+                                setSsoEditing(server.name);
+                                setSsoAuthUrl("");
+                                setSsoTokenUrl("");
+                                setSsoClientId("");
+                                setSsoScopes("");
+                              }
                               setAuthEditing(null);
                             }}
                             style={styles.ssoBtn}

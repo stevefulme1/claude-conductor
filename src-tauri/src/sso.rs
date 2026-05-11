@@ -1,5 +1,7 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -15,6 +17,7 @@ struct SsoSession {
     token_url: String,
     client_id: String,
     redirect_uri: String,
+    state: String,
     cancel_tx: Option<mpsc::Sender<()>>,
 }
 
@@ -41,39 +44,24 @@ pub struct SsoCallbackResult {
 }
 
 fn generate_code_verifier() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-
     let charset = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-    let mut verifier = Vec::with_capacity(64);
-    let mut state = seed;
-    for _ in 0..64 {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        let idx = ((state >> 33) as usize) % charset.len();
-        verifier.push(charset[idx]);
-    }
-    String::from_utf8(verifier).unwrap_or_default()
+    let mut random_bytes = [0u8; 64];
+    getrandom::getrandom(&mut random_bytes).expect("failed to get random bytes");
+    random_bytes
+        .iter()
+        .map(|b| charset[(*b as usize) % charset.len()] as char)
+        .collect()
+}
+
+fn generate_state() -> String {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("failed to get random bytes");
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 fn sha256_base64url(input: &str) -> String {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(format!(
-            "printf '%s' '{}' | openssl dgst -sha256 -binary | openssl base64 -A",
-            input.replace('\'', "'\"'\"'")
-        ))
-        .output();
-
-    match output {
-        Ok(out) => {
-            let b64 = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            b64.replace('+', "-").replace('/', "_").trim_end_matches('=').to_string()
-        }
-        Err(_) => String::new(),
-    }
+    let hash = Sha256::digest(input.as_bytes());
+    URL_SAFE_NO_PAD.encode(hash)
 }
 
 fn url_encode(s: &str) -> String {
@@ -91,14 +79,36 @@ fn url_encode(s: &str) -> String {
     result
 }
 
+fn url_decode(s: &str) -> String {
+    let mut result = Vec::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
+                16,
+            ) {
+                result.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        if bytes[i] == b'+' {
+            result.push(b' ');
+        } else {
+            result.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&result).to_string()
+}
+
 fn parse_query_string(query: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
     for pair in query.split('&') {
         if let Some((key, value)) = pair.split_once('=') {
-            params.insert(
-                key.to_string(),
-                value.replace('+', " ").to_string(),
-            );
+            params.insert(url_decode(key), url_decode(value));
         }
     }
     params
@@ -116,18 +126,16 @@ pub fn start_sso_flow(
 
     let code_verifier = generate_code_verifier();
     let code_challenge = sha256_base64url(&code_verifier);
-
-    if code_challenge.is_empty() {
-        return Err("Failed to generate PKCE challenge (is openssl installed?)".into());
-    }
+    let state = generate_state();
 
     let auth_url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state=conductor",
+        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
         config.auth_url,
         url_encode(&config.client_id),
         url_encode(&redirect_uri),
         url_encode(&config.scopes),
         url_encode(&code_challenge),
+        url_encode(&state),
     );
 
     let (cancel_tx, cancel_rx) = mpsc::channel();
@@ -139,6 +147,7 @@ pub fn start_sso_flow(
             token_url: config.token_url.clone(),
             client_id: config.client_id.clone(),
             redirect_uri: redirect_uri.clone(),
+            state: state.clone(),
             cancel_tx: Some(cancel_tx),
         });
     }
@@ -170,13 +179,32 @@ pub fn start_sso_flow(
                         error: Some("SSO login timed out (5 minutes)".into()),
                     },
                 );
+                let mut guard = SSO_STATE.lock();
+                *guard = None;
                 return;
             }
 
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     let mut buf = [0u8; 4096];
-                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let n = match stream.read(&mut buf) {
+                        Ok(n) => n,
+                        Err(e) => {
+                            log::error!("Failed to read SSO callback: {}", e);
+                            let _ = tauri::Emitter::emit(
+                                &app,
+                                "sso-result",
+                                SsoCallbackResult {
+                                    success: false,
+                                    server_name: server_name.clone(),
+                                    error: Some(format!("Failed to read callback: {e}")),
+                                },
+                            );
+                            let mut guard = SSO_STATE.lock();
+                            *guard = None;
+                            return;
+                        }
+                    };
                     let request = String::from_utf8_lossy(&buf[..n]);
 
                     let path = request
@@ -188,7 +216,19 @@ pub fn start_sso_flow(
                     let query = path.split_once('?').map(|(_, q)| q).unwrap_or("");
                     let params = parse_query_string(query);
 
-                    let result = if let Some(code) = params.get("code") {
+                    let expected_state = {
+                        let guard = SSO_STATE.lock();
+                        guard.as_ref().map(|s| s.state.clone()).unwrap_or_default()
+                    };
+                    let received_state = params.get("state").cloned().unwrap_or_default();
+
+                    let result = if received_state != expected_state {
+                        SsoCallbackResult {
+                            success: false,
+                            server_name: server_name.clone(),
+                            error: Some("OAuth state mismatch — possible CSRF attack".into()),
+                        }
+                    } else if let Some(code) = params.get("code") {
                         let exchange_result = exchange_code_for_token(code);
                         match exchange_result {
                             Ok(token) => {
@@ -253,7 +293,9 @@ pub fn start_sso_flow(
                     let _ = stream.write_all(response.as_bytes());
                     let _ = stream.flush();
 
-                    let _ = tauri::Emitter::emit(&app, "sso-result", result);
+                    if let Err(e) = tauri::Emitter::emit(&app, "sso-result", result) {
+                        log::error!("Failed to emit SSO result event: {}", e);
+                    }
 
                     let mut guard = SSO_STATE.lock();
                     *guard = None;
@@ -264,6 +306,17 @@ pub fn start_sso_flow(
                 }
                 Err(e) => {
                     log::error!("SSO listener error: {}", e);
+                    let _ = tauri::Emitter::emit(
+                        &app,
+                        "sso-result",
+                        SsoCallbackResult {
+                            success: false,
+                            server_name: server_name.clone(),
+                            error: Some(format!("Callback listener failed: {e}")),
+                        },
+                    );
+                    let mut guard = SSO_STATE.lock();
+                    *guard = None;
                     return;
                 }
             }
@@ -291,7 +344,7 @@ fn exchange_code_for_token(code: &str) -> Result<String, Box<dyn std::error::Err
     );
 
     let mut curl = Command::new("curl");
-    curl.arg("-s")
+    curl.arg("-sS")
         .arg("-X")
         .arg("POST")
         .arg(&session.token_url)
@@ -314,10 +367,16 @@ fn exchange_code_for_token(code: &str) -> Result<String, Box<dyn std::error::Err
     }
 
     let output = child.wait_with_output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Token request failed (curl exit {}): {}", output.status, stderr).into());
+    }
+
     let response = String::from_utf8_lossy(&output.stdout);
 
     let parsed: serde_json::Value = serde_json::from_str(&response)
-        .map_err(|_| format!("Invalid token response: {}", &response[..response.len().min(200)]))?;
+        .map_err(|_| "Invalid JSON in token response")?;
 
     if let Some(token) = parsed.get("access_token").and_then(|v| v.as_str()) {
         Ok(token.to_string())
@@ -328,7 +387,7 @@ fn exchange_code_for_token(code: &str) -> Result<String, Box<dyn std::error::Err
             .unwrap_or("");
         Err(format!("{err}: {desc}").into())
     } else {
-        Err(format!("No access_token in response: {response}").into())
+        Err("No access_token in token response".into())
     }
 }
 

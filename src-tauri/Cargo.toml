@@ -1,6 +1,6 @@
 [package]
 name = "claude-conductor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Session manager for Claude Code"
 authors = ["Steve Fulmer <sfulmer@redhat.com>"]
 license = "MIT"
@@ -27,6 +27,9 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 parking_lot = "0.12"
+getrandom = "0.2"
+sha2 = "0.10"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
