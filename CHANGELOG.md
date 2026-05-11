@@ -2,6 +2,17 @@
 
 All notable changes to Claude Conductor are documented in this file.
 
+## [0.2.0] - 2026-05-11
+
+### Added
+- **Shell Environment Propagation** — Captures the user's full login shell environment (`$SHELL -l -c env`) and passes it to all spawned Claude processes. MCP servers, plugins, and tools available in the user's shell are now consistently available across all Conductor sessions.
+- **Settings Panel** — New settings popup (gear icon in sidebar footer) showing MCP server health with green/red status dots, enabled plugins, active model, and config file paths.
+- **MCP Server Verification** — Backend checks whether stdio MCP commands are on PATH and HTTP MCP URLs are configured, surfacing status in the Settings panel.
+- **Config Reader** — Reads `~/.claude.json` (MCP servers) and `~/.claude/settings.json` (plugins, model) to display environment configuration.
+
+### Fixed
+- **MCP Servers Unavailable in Some Sessions** — Sessions spawned from Conductor now inherit the full shell environment, resolving issues where MCP servers and tools worked in the parent shell but not in Conductor-launched sessions.
+
 ## [0.1.0] - 2026-05-11
 
 ### Added
