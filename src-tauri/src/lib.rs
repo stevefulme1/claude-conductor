@@ -1,8 +1,11 @@
+mod digest;
 mod pty;
 mod sessions;
 
 use sessions::SessionMeta;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 #[tauri::command]
 fn list_sessions() -> Result<Vec<SessionMeta>, String> {
@@ -55,6 +58,28 @@ fn kill_terminal(session_id: String) -> Result<(), String> {
     pty::kill_pty(&session_id)
 }
 
+#[tauri::command]
+fn refresh_digest() -> Result<String, String> {
+    digest::write_digest().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_digest() -> Result<String, String> {
+    digest::generate_digest().map_err(|e| e.to_string())
+}
+
+fn start_digest_timer() {
+    thread::spawn(|| {
+        loop {
+            match digest::write_digest() {
+                Ok(path) => log::info!("Digest refreshed: {}", path),
+                Err(e) => log::warn!("Digest refresh failed: {}", e),
+            }
+            thread::sleep(Duration::from_secs(300));
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -70,6 +95,9 @@ pub fn run() {
                     .level(level)
                     .build(),
             )?;
+
+            start_digest_timer();
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -79,6 +107,8 @@ pub fn run() {
             write_terminal,
             resize_terminal,
             kill_terminal,
+            refresh_digest,
+            get_digest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

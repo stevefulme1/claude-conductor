@@ -20,6 +20,7 @@ export default function Terminal({ session }: Props) {
 
     let mounted = true;
     const unlisteners: UnlistenFn[] = [];
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
     const term = new XTerm({
       theme: {
@@ -53,6 +54,7 @@ export default function Terminal({ session }: Props) {
       cursorStyle: "bar",
       scrollback: 10000,
       allowProposedApi: true,
+      convertEol: false,
     });
 
     const fit = new FitAddon();
@@ -60,19 +62,27 @@ export default function Terminal({ session }: Props) {
     term.loadAddon(new WebLinksAddon());
 
     term.open(termRef.current);
-    fit.fit();
+
+    requestAnimationFrame(() => fit.fit());
+
+    let lastCols = term.cols;
+    let lastRows = term.rows;
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!mounted) return;
         fit.fit();
-        if (mounted) {
+        if (term.cols !== lastCols || term.rows !== lastRows) {
+          lastCols = term.cols;
+          lastRows = term.rows;
           invoke("resize_terminal", {
             sessionId: session.session_id,
             cols: term.cols,
             rows: term.rows,
           }).catch((err) => console.warn("resize_terminal failed:", err));
         }
-      });
+      }, 100);
     });
     resizeObserver.observe(termRef.current);
 
@@ -90,11 +100,16 @@ export default function Terminal({ session }: Props) {
       const outputUnlisten = await listen<string>(
         `pty-output-${session.session_id}`,
         (event) => {
-          if (mounted) term.write(event.payload);
+          if (mounted) {
+            term.write(event.payload);
+          }
         }
       );
       if (mounted) unlisteners.push(outputUnlisten);
-      else { outputUnlisten(); return; }
+      else {
+        outputUnlisten();
+        return;
+      }
 
       const exitUnlisten = await listen<number>(
         `pty-exit-${session.session_id}`,
@@ -108,7 +123,10 @@ export default function Terminal({ session }: Props) {
         }
       );
       if (mounted) unlisteners.push(exitUnlisten);
-      else { exitUnlisten(); return; }
+      else {
+        exitUnlisten();
+        return;
+      }
 
       const inputDisposable = term.onData((data) => {
         invoke("write_terminal", {
@@ -140,6 +158,7 @@ export default function Terminal({ session }: Props) {
 
     return () => {
       mounted = false;
+      if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       unlisteners.forEach((fn) => fn());
       invoke("kill_terminal", { sessionId: session.session_id }).catch(

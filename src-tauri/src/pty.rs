@@ -25,6 +25,23 @@ fn validate_size(cols: u16, rows: u16) -> Result<(), String> {
     Ok(())
 }
 
+fn find_utf8_boundary(buf: &[u8], len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    if std::str::from_utf8(&buf[..len]).is_ok() {
+        return len;
+    }
+    let mut end = len;
+    while end > 0 && end > len.saturating_sub(4) {
+        end -= 1;
+        if std::str::from_utf8(&buf[..end]).is_ok() {
+            return end;
+        }
+    }
+    len
+}
+
 pub fn spawn_pty(
     app: AppHandle,
     session_id: String,
@@ -50,6 +67,8 @@ pub fn spawn_pty(
     cmd.arg(&claude_session_id);
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("LC_ALL", "en_US.UTF-8");
 
     let mut child = pair
         .slave
@@ -72,19 +91,49 @@ pub fn spawn_pty(
     let app_clone = app.clone();
 
     let reader_handle = thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 8192];
+        let mut carry = Vec::new();
+
         loop {
-            match reader.read(&mut buf) {
+            let offset = carry.len();
+            let read_start = offset;
+
+            if offset > 0 {
+                buf[..offset].copy_from_slice(&carry);
+                carry.clear();
+            }
+
+            match reader.read(&mut buf[read_start..]) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&format!("pty-output-{}", sid), data);
+                    let total = read_start + n;
+                    let boundary = find_utf8_boundary(&buf, total);
+
+                    if boundary > 0 {
+                        let text = String::from_utf8_lossy(&buf[..boundary]).to_string();
+                        let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
+                    }
+
+                    if boundary < total {
+                        carry.extend_from_slice(&buf[boundary..total]);
+                    }
                 }
                 Err(e) => {
                     log::debug!("PTY reader error for {}: {}", sid, e);
                     break;
                 }
             }
+
+            if !carry.is_empty() && carry.len() >= 4 {
+                let text = String::from_utf8_lossy(&carry).to_string();
+                let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
+                carry.clear();
+            }
+        }
+
+        if !carry.is_empty() {
+            let text = String::from_utf8_lossy(&carry).to_string();
+            let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
         }
 
         let exit_status = child.wait().ok();
