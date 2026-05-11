@@ -52,9 +52,11 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [labels, setLabels] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadSessions();
+    loadLabels();
     const interval = setInterval(loadSessions, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -70,6 +72,34 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
     }
   }
 
+  async function loadLabels() {
+    try {
+      const result = await invoke<Record<string, string>>(
+        "get_session_labels"
+      );
+      setLabels(result);
+    } catch (e) {
+      console.error("Failed to load labels:", e);
+    }
+  }
+
+  async function renameSession(sessionId: string, label: string) {
+    try {
+      await invoke("set_session_label", { sessionId, label });
+      setLabels((prev) => {
+        const next = { ...prev };
+        if (label.trim()) {
+          next[sessionId] = label.trim();
+        } else {
+          delete next[sessionId];
+        }
+        return next;
+      });
+    } catch (e) {
+      console.error("Failed to rename session:", e);
+    }
+  }
+
   const filtered = useMemo(() => {
     if (!search.trim()) return sessions;
     const q = search.toLowerCase();
@@ -77,9 +107,10 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
       (s) =>
         s.first_message.toLowerCase().includes(q) ||
         s.project_display.toLowerCase().includes(q) ||
-        s.cwd.toLowerCase().includes(q)
+        s.cwd.toLowerCase().includes(q) ||
+        (labels[s.session_id] || "").toLowerCase().includes(q)
     );
-  }, [sessions, search]);
+  }, [sessions, search, labels]);
 
   const grouped = useMemo(() => groupSessions(filtered), [filtered]);
   const groupOrder = [
@@ -188,6 +219,10 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
                     activeSession?.session_id === session.session_id
                   }
                   timeAgo={timeAgo(session.last_modified)}
+                  label={labels[session.session_id] || ""}
+                  onRename={(label) =>
+                    renameSession(session.session_id, label)
+                  }
                   onClick={() => onSelect(session)}
                 />
               ))}

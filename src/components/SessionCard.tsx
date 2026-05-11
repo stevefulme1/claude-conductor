@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { SessionMeta } from "../types";
 
 interface Props {
   session: SessionMeta;
   isActive: boolean;
   timeAgo: string;
+  label: string;
+  onRename: (label: string) => void;
   onClick: () => void;
 }
 
@@ -20,14 +22,44 @@ function shortenPath(path: string): string {
   return path;
 }
 
-export default function SessionCard({ session, isActive, timeAgo, onClick }: Props) {
+export default function SessionCard({
+  session,
+  isActive,
+  timeAgo,
+  label,
+  onRename,
+  onClick,
+}: Props) {
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(label);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  function startRename(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditValue(label);
+    setEditing(true);
+  }
+
+  function commitRename() {
+    setEditing(false);
+    if (editValue.trim() !== label) {
+      onRename(editValue.trim());
+    }
+  }
 
   const background = isActive
     ? styles.active.background
     : hovered
-    ? "var(--bg-hover)"
-    : "transparent";
+      ? "var(--bg-hover)"
+      : "transparent";
 
   return (
     <button
@@ -40,10 +72,49 @@ export default function SessionCard({ session, isActive, timeAgo, onClick }: Pro
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div style={styles.top}>
-        <span style={styles.project}>{shortenPath(session.cwd)}</span>
-        <span style={styles.time}>{timeAgo}</span>
-      </div>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          placeholder="Name this session..."
+          style={styles.labelInput}
+        />
+      ) : (
+        <div style={styles.top}>
+          <div style={styles.topLeft}>
+            {label && <span style={styles.label}>{label}</span>}
+            <span style={styles.project}>{shortenPath(session.cwd)}</span>
+          </div>
+          <div style={styles.topRight}>
+            {hovered && (
+              <button
+                onClick={startRename}
+                style={styles.renameBtn}
+                title="Rename session"
+              >
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                </svg>
+              </button>
+            )}
+            <span style={styles.time}>{timeAgo}</span>
+          </div>
+        </div>
+      )}
       <div style={styles.message}>{session.first_message}</div>
       <div style={styles.meta}>
         <span style={styles.badge}>{session.message_count} msgs</span>
@@ -70,22 +141,65 @@ const styles: Record<string, React.CSSProperties> = {
   top: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 4,
+    gap: 6,
   },
-  project: {
+  topLeft: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 2,
+    minWidth: 0,
+    flex: 1,
+  },
+  topRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
+  label: {
     fontSize: 12,
     fontWeight: 600,
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  project: {
+    fontSize: 11,
+    fontWeight: 500,
     color: "var(--accent)",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    maxWidth: "65%",
+    whiteSpace: "nowrap" as const,
   },
   time: {
     fontSize: 11,
     color: "var(--text-tertiary)",
     flexShrink: 0,
+  },
+  renameBtn: {
+    padding: 2,
+    borderRadius: 3,
+    color: "var(--text-tertiary)",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+  },
+  labelInput: {
+    width: "100%",
+    padding: "3px 6px",
+    fontSize: 12,
+    fontWeight: 600,
+    background: "var(--bg-tertiary)",
+    border: "1px solid var(--accent)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-primary)",
+    outline: "none",
+    marginBottom: 4,
   },
   message: {
     fontSize: 13,

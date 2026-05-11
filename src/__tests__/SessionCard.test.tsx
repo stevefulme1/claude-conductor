@@ -17,28 +17,28 @@ const mockSession: SessionMeta = {
 describe("SessionCard", () => {
   it("renders session first message", () => {
     const { container } = render(
-      <SessionCard session={mockSession} isActive={false} timeAgo="2h ago" onClick={() => {}} />
+      <SessionCard session={mockSession} isActive={false} timeAgo="2h ago" label="" onRename={() => {}} onClick={() => {}} />
     );
     expect(container.textContent).toContain("Fix the login bug");
   });
 
   it("renders message count", () => {
     const { container } = render(
-      <SessionCard session={mockSession} isActive={false} timeAgo="2h ago" onClick={() => {}} />
+      <SessionCard session={mockSession} isActive={false} timeAgo="2h ago" label="" onRename={() => {}} onClick={() => {}} />
     );
     expect(container.textContent).toContain("12");
   });
 
   it("renders time ago", () => {
     const { container } = render(
-      <SessionCard session={mockSession} isActive={false} timeAgo="5m ago" onClick={() => {}} />
+      <SessionCard session={mockSession} isActive={false} timeAgo="5m ago" label="" onRename={() => {}} onClick={() => {}} />
     );
     expect(container.textContent).toContain("5m ago");
   });
 
   it("shortens macOS paths with tilde", () => {
     const { container } = render(
-      <SessionCard session={mockSession} isActive={false} timeAgo="1h ago" onClick={() => {}} />
+      <SessionCard session={mockSession} isActive={false} timeAgo="1h ago" label="" onRename={() => {}} onClick={() => {}} />
     );
     expect(container.textContent).toContain("~/project");
   });
@@ -46,7 +46,7 @@ describe("SessionCard", () => {
   it("shortens Linux paths with tilde", () => {
     const linuxSession = { ...mockSession, cwd: "/home/steve/project" };
     const { container } = render(
-      <SessionCard session={linuxSession} isActive={false} timeAgo="1h ago" onClick={() => {}} />
+      <SessionCard session={linuxSession} isActive={false} timeAgo="1h ago" label="" onRename={() => {}} onClick={() => {}} />
     );
     expect(container.textContent).toContain("~/project");
   });
@@ -54,7 +54,7 @@ describe("SessionCard", () => {
   it("fires onClick when clicked", () => {
     const onClick = vi.fn();
     const { container } = render(
-      <SessionCard session={mockSession} isActive={false} timeAgo="1h ago" onClick={onClick} />
+      <SessionCard session={mockSession} isActive={false} timeAgo="1h ago" label="" onRename={() => {}} onClick={onClick} />
     );
     const button = container.querySelector("button")!;
     fireEvent.click(button);

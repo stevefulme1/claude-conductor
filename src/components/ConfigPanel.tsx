@@ -17,6 +17,13 @@ export default function ConfigPanel({ onClose }: Props) {
   const [envEditing, setEnvEditing] = useState<string | null>(null);
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [checkingAll, setCheckingAll] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"stdio" | "http">("stdio");
+  const [newCommandOrUrl, setNewCommandOrUrl] = useState("");
+  const [newArgs, setNewArgs] = useState("");
+  const [newAuthToken, setNewAuthToken] = useState("");
+  const [newEnvPairs, setNewEnvPairs] = useState("");
 
   useEffect(() => {
     loadConfig();
@@ -92,6 +99,42 @@ export default function ConfigPanel({ onClose }: Props) {
       await loadConfig();
     } catch (e) {
       setError(`Failed to toggle server: ${e}`);
+    }
+  }
+
+  async function addServer() {
+    const envVars: Record<string, string> = {};
+    if (newEnvPairs.trim()) {
+      for (const line of newEnvPairs.split("\n")) {
+        const eq = line.indexOf("=");
+        if (eq > 0) {
+          envVars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+        }
+      }
+    }
+    try {
+      await invoke("add_mcp", {
+        server: {
+          name: newName.trim(),
+          server_type: newType,
+          command_or_url: newCommandOrUrl.trim(),
+          args: newArgs.trim()
+            ? newArgs.split(/\s+/).filter(Boolean)
+            : [],
+          env_vars: envVars,
+          auth_token: newAuthToken,
+        },
+      });
+      setShowAddForm(false);
+      setNewName("");
+      setNewType("stdio");
+      setNewCommandOrUrl("");
+      setNewArgs("");
+      setNewAuthToken("");
+      setNewEnvPairs("");
+      await loadConfig();
+    } catch (e) {
+      setError(`Failed to add server: ${e}`);
     }
   }
 
@@ -380,6 +423,122 @@ export default function ConfigPanel({ onClose }: Props) {
               </div>
             );
           })}
+
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            style={styles.addServerBtn}
+          >
+            {showAddForm ? "Cancel" : "+ Add MCP Server"}
+          </button>
+
+          {showAddForm && (
+            <div style={styles.addForm}>
+              <div style={styles.addFormRow}>
+                <label style={styles.addLabel}>Name</label>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="my-server"
+                  style={styles.formInput}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              <div style={styles.addFormRow}>
+                <label style={styles.addLabel}>Type</label>
+                <div style={styles.typeToggle}>
+                  <button
+                    onClick={() => setNewType("stdio")}
+                    style={{
+                      ...styles.typeBtn,
+                      ...(newType === "stdio"
+                        ? styles.typeBtnActive
+                        : {}),
+                    }}
+                  >
+                    stdio
+                  </button>
+                  <button
+                    onClick={() => setNewType("http")}
+                    style={{
+                      ...styles.typeBtn,
+                      ...(newType === "http"
+                        ? styles.typeBtnActive
+                        : {}),
+                    }}
+                  >
+                    http
+                  </button>
+                </div>
+              </div>
+              <div style={styles.addFormRow}>
+                <label style={styles.addLabel}>
+                  {newType === "http" ? "URL" : "Command"}
+                </label>
+                <input
+                  value={newCommandOrUrl}
+                  onChange={(e) => setNewCommandOrUrl(e.target.value)}
+                  placeholder={
+                    newType === "http"
+                      ? "https://api.example.com/mcp"
+                      : "/usr/local/bin/my-server"
+                  }
+                  style={styles.formInput}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              {newType === "stdio" && (
+                <div style={styles.addFormRow}>
+                  <label style={styles.addLabel}>Args</label>
+                  <input
+                    value={newArgs}
+                    onChange={(e) => setNewArgs(e.target.value)}
+                    placeholder="--flag value (space-separated)"
+                    style={styles.formInput}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              )}
+              {newType === "http" ? (
+                <div style={styles.addFormRow}>
+                  <label style={styles.addLabel}>
+                    Bearer Token
+                  </label>
+                  <input
+                    type="password"
+                    value={newAuthToken}
+                    onChange={(e) => setNewAuthToken(e.target.value)}
+                    placeholder="Optional auth token"
+                    style={styles.formInput}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              ) : (
+                <div style={styles.addFormRow}>
+                  <label style={styles.addLabel}>Env Vars</label>
+                  <textarea
+                    value={newEnvPairs}
+                    onChange={(e) => setNewEnvPairs(e.target.value)}
+                    placeholder={"KEY=value\nANOTHER_KEY=value"}
+                    style={{
+                      ...styles.formInput,
+                      minHeight: 48,
+                      resize: "vertical" as const,
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              )}
+              <button
+                onClick={addServer}
+                disabled={
+                  !newName.trim() || !newCommandOrUrl.trim()
+                }
+                style={styles.saveBtn}
+              >
+                Add Server
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={styles.section}>
@@ -724,5 +883,60 @@ const styles: Record<string, any> = {
     padding: 14,
     fontSize: 12,
     color: "var(--text-tertiary)",
+  },
+  addServerBtn: {
+    width: "100%",
+    padding: "8px 0",
+    fontSize: 12,
+    color: "var(--accent)",
+    background: "none",
+    border: "1px dashed var(--border-subtle)",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+    marginTop: 6,
+    transition: "var(--transition)",
+  },
+  addForm: {
+    padding: "10px 0",
+    borderTop: "1px solid var(--border-subtle)",
+    marginTop: 8,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 8,
+  },
+  addFormRow: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 3,
+  },
+  addLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: "var(--text-tertiary)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.5px",
+  },
+  typeToggle: {
+    display: "flex",
+    gap: 0,
+    borderRadius: "var(--radius-sm)",
+    overflow: "hidden",
+    border: "1px solid var(--border-subtle)",
+  },
+  typeBtn: {
+    flex: 1,
+    padding: "5px 0",
+    fontSize: 11,
+    fontFamily: "'SF Mono', monospace",
+    background: "var(--bg-tertiary)",
+    color: "var(--text-tertiary)",
+    border: "none",
+    cursor: "pointer",
+    transition: "var(--transition)",
+  },
+  typeBtnActive: {
+    background: "var(--accent-muted)",
+    color: "var(--accent)",
+    fontWeight: 600,
   },
 };

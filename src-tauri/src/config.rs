@@ -40,6 +40,16 @@ pub struct McpEnvUpdate {
     pub env_vars: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct NewMcpServer {
+    pub name: String,
+    pub server_type: String,
+    pub command_or_url: String,
+    pub args: Vec<String>,
+    pub env_vars: HashMap<String, String>,
+    pub auth_token: String,
+}
+
 fn config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -677,5 +687,128 @@ pub fn toggle_mcp_server(
 
     let output = serde_json::to_string_pretty(&parsed)?;
     write_config_file(&cfg_path, &output)?;
+    Ok(())
+}
+
+pub fn add_mcp_server(server: NewMcpServer) -> Result<(), Box<dyn std::error::Error>> {
+    if server.name.trim().is_empty() {
+        return Err("Server name cannot be empty".into());
+    }
+    if server.command_or_url.trim().is_empty() {
+        return Err("Command or URL cannot be empty".into());
+    }
+
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let cfg_path = config_path();
+
+    let mut parsed: serde_json::Value = if cfg_path.exists() {
+        let data = fs::read_to_string(&cfg_path)?;
+        serde_json::from_str(&data)?
+    } else {
+        serde_json::json!({})
+    };
+
+    let servers = parsed
+        .as_object_mut()
+        .ok_or("Invalid config format")?
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+
+    if servers.get(&server.name).is_some() {
+        return Err(format!("Server '{}' already exists", server.name).into());
+    }
+
+    let mut server_obj = serde_json::Map::new();
+    server_obj.insert(
+        "type".into(),
+        serde_json::Value::String(server.server_type.clone()),
+    );
+
+    if server.server_type == "http" {
+        server_obj.insert(
+            "url".into(),
+            serde_json::Value::String(server.command_or_url),
+        );
+        if !server.auth_token.trim().is_empty() {
+            let mut headers = serde_json::Map::new();
+            headers.insert(
+                "Authorization".into(),
+                serde_json::Value::String(format!("Bearer {}", server.auth_token.trim())),
+            );
+            server_obj.insert("headers".into(), serde_json::Value::Object(headers));
+        }
+    } else {
+        server_obj.insert(
+            "command".into(),
+            serde_json::Value::String(server.command_or_url),
+        );
+        if !server.args.is_empty() {
+            server_obj.insert(
+                "args".into(),
+                serde_json::Value::Array(
+                    server
+                        .args
+                        .iter()
+                        .map(|a| serde_json::Value::String(a.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        let non_empty_env: HashMap<_, _> = server
+            .env_vars
+            .iter()
+            .filter(|(_, v)| !v.trim().is_empty())
+            .collect();
+        if !non_empty_env.is_empty() {
+            let mut env = serde_json::Map::new();
+            for (key, value) in non_empty_env {
+                env.insert(key.clone(), serde_json::Value::String(value.clone()));
+            }
+            server_obj.insert("env".into(), serde_json::Value::Object(env));
+        }
+    }
+
+    if let Some(s) = servers.as_object_mut() {
+        s.insert(server.name, serde_json::Value::Object(server_obj));
+    }
+
+    let output = serde_json::to_string_pretty(&parsed)?;
+    write_config_file(&cfg_path, &output)?;
+    Ok(())
+}
+
+fn labels_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claude")
+        .join("conductor-labels.json")
+}
+
+pub fn get_session_labels() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let path = labels_path();
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let data = fs::read_to_string(&path)?;
+    let labels: HashMap<String, String> = serde_json::from_str(&data)?;
+    Ok(labels)
+}
+
+pub fn set_session_label(
+    session_id: &str,
+    label: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = labels_path();
+    let mut labels = get_session_labels().unwrap_or_default();
+
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        labels.remove(session_id);
+    } else {
+        labels.insert(session_id.to_string(), trimmed.to_string());
+    }
+
+    let output = serde_json::to_string_pretty(&labels)?;
+    write_config_file(&path, &output)?;
     Ok(())
 }

@@ -100,6 +100,21 @@ fn toggle_mcp(server_name: String, enabled: bool) -> Result<(), String> {
     config::toggle_mcp_server(&server_name, enabled).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn add_mcp(server: config::NewMcpServer) -> Result<(), String> {
+    config::add_mcp_server(server).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_session_labels() -> Result<HashMap<String, String>, String> {
+    config::get_session_labels().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_session_label(session_id: String, label: String) -> Result<(), String> {
+    config::set_session_label(&session_id, &label).map_err(|e| e.to_string())
+}
+
 fn start_digest_timer() {
     thread::spawn(|| {
         loop {
@@ -147,6 +162,9 @@ pub fn run() {
             update_mcp_env,
             update_mcp_auth,
             toggle_mcp,
+            add_mcp,
+            get_session_labels,
+            set_session_label,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
