@@ -2,7 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::Path;
+
+const MAX_SESSIONS: usize = 500;
+const MAX_LINES: usize = 200;
+const MAX_CONSECUTIVE_FAILURES: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
@@ -35,7 +39,36 @@ fn project_path_to_display(encoded: &str) -> String {
     encoded.replace('-', "/").trim_start_matches('/').to_string()
 }
 
-fn extract_session_summary(file_path: &PathBuf) -> (String, String, usize) {
+fn extract_text_from_content(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.len() > 5 && !trimmed.starts_with('<') {
+                Some(trimmed.chars().take(120).collect())
+            } else {
+                None
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                if let Some(obj) = item.as_object() {
+                    if obj.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
+                            let trimmed = text.trim();
+                            if trimmed.len() > 5 && !trimmed.starts_with('<') {
+                                return Some(trimmed.chars().take(120).collect());
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn extract_session_summary(file_path: &Path) -> (String, String, usize) {
     let mut first_msg = String::new();
     let mut cwd = String::new();
     let mut count: usize = 0;
@@ -49,14 +82,33 @@ fn extract_session_summary(file_path: &PathBuf) -> (String, String, usize) {
     };
 
     let reader = BufReader::new(file);
-    for line in reader.lines().take(200) {
+    let mut consecutive_failures: usize = 0;
+
+    for line in reader.lines().take(MAX_LINES) {
         let line = match line {
             Ok(l) => l,
-            Err(_) => continue,
+            Err(_) => {
+                consecutive_failures += 1;
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    log::warn!("Too many read failures in {}, stopping early", file_path.display());
+                    break;
+                }
+                continue;
+            }
         };
         let parsed = match serde_json::from_str::<SessionLine>(&line) {
-            Ok(p) => p,
-            Err(_) => continue,
+            Ok(p) => {
+                consecutive_failures = 0;
+                p
+            }
+            Err(_) => {
+                consecutive_failures += 1;
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    log::warn!("Too many parse failures in {}, stopping early", file_path.display());
+                    break;
+                }
+                continue;
+            }
         };
 
         if parsed.msg_type.as_deref() == Some("user")
@@ -77,10 +129,9 @@ fn extract_session_summary(file_path: &PathBuf) -> (String, String, usize) {
         }
 
         if let Some(ref msg) = parsed.message {
-            if let Some(serde_json::Value::String(ref text)) = msg.content {
-                let trimmed = text.trim();
-                if trimmed.len() > 5 && !trimmed.starts_with('<') {
-                    first_msg = trimmed.chars().take(120).collect();
+            if let Some(ref content) = msg.content {
+                if let Some(text) = extract_text_from_content(content) {
+                    first_msg = text;
                     if let Some(ref c) = parsed.cwd {
                         cwd = c.clone();
                     }
@@ -99,13 +150,17 @@ fn extract_session_summary(file_path: &PathBuf) -> (String, String, usize) {
 pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error>> {
     let home = dirs::home_dir().ok_or("no home dir")?;
     let projects_dir = home.join(".claude").join("projects");
+    discover_sessions_from(&projects_dir)
+}
+
+fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<dyn std::error::Error>> {
     let mut results = vec![];
 
     if !projects_dir.exists() {
         return Ok(results);
     }
 
-    for project_entry in fs::read_dir(&projects_dir)? {
+    for project_entry in fs::read_dir(projects_dir)? {
         let project_entry = match project_entry {
             Ok(e) => e,
             Err(e) => {
@@ -113,9 +168,15 @@ pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error
                 continue;
             }
         };
-        if !project_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+
+        let ft = match project_entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if ft.is_symlink() || !ft.is_dir() {
             continue;
         }
+
         let project_name = project_entry.file_name().to_string_lossy().to_string();
         let display = project_path_to_display(&project_name);
 
@@ -132,6 +193,11 @@ pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error
                 Ok(f) => f,
                 Err(_) => continue,
             };
+
+            if file.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+                continue;
+            }
+
             let fname = file.file_name().to_string_lossy().to_string();
             if !fname.ends_with(".jsonl") {
                 continue;
@@ -165,5 +231,180 @@ pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error
     }
 
     results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+    results.truncate(MAX_SESSIONS);
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_project_path_to_display_basic() {
+        assert_eq!(project_path_to_display("Users-steve-projects-foo"), "Users/steve/projects/foo");
+    }
+
+    #[test]
+    fn test_project_path_to_display_leading_hyphens() {
+        assert_eq!(project_path_to_display("-Users-steve"), "Users/steve");
+    }
+
+    #[test]
+    fn test_project_path_to_display_single_segment() {
+        assert_eq!(project_path_to_display("myproject"), "myproject");
+    }
+
+    #[test]
+    fn test_project_path_to_display_empty() {
+        assert_eq!(project_path_to_display(""), "");
+    }
+
+    fn write_jsonl(dir: &std::path::Path, name: &str, lines: &[&str]) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let mut f = fs::File::create(&path).unwrap();
+        for line in lines {
+            writeln!(f, "{}", line).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn test_extract_session_summary_valid() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            r#"{"type":"user","message":{"content":"Hello world, this is a test message"},"cwd":"/home/user/proj"}"#,
+            r#"{"type":"assistant","message":{"content":"I can help with that"}}"#,
+            r#"{"type":"user","message":{"content":"Another user message here too"}}"#,
+        ]);
+
+        let (msg, cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "Hello world, this is a test message");
+        assert_eq!(cwd, "/home/user/proj");
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_extract_session_summary_content_array() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"Array content message here"}]},"cwd":"/tmp"}"#,
+        ]);
+
+        let (msg, cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "Array content message here");
+        assert_eq!(cwd, "/tmp");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_extract_session_summary_malformed() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            "not json at all",
+            "still not json",
+            "{bad json}",
+        ]);
+
+        let (msg, _cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "(no user messages)");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_extract_session_summary_mixed_valid_invalid() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            "garbage line",
+            r#"{"type":"user","message":{"content":"Valid message after garbage"},"cwd":"/x"}"#,
+            "more garbage",
+            r#"{"type":"assistant","message":{"content":"response"}}"#,
+        ]);
+
+        let (msg, cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "Valid message after garbage");
+        assert_eq!(cwd, "/x");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_extract_session_summary_skips_short_messages() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            r#"{"type":"user","message":{"content":"hi"}}"#,
+            r#"{"type":"user","message":{"content":"This is a longer message that should be picked up"}}"#,
+        ]);
+
+        let (msg, _cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "This is a longer message that should be picked up");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_extract_session_summary_skips_meta_messages() {
+        let dir = TempDir::new().unwrap();
+        let path = write_jsonl(dir.path(), "test.jsonl", &[
+            r#"{"type":"user","isMeta":true,"message":{"content":"This is a meta message, should be skipped"}}"#,
+            r#"{"type":"user","message":{"content":"This is the real first message here"}}"#,
+        ]);
+
+        let (msg, _cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "This is the real first message here");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_extract_session_summary_nonexistent_file() {
+        let path = std::path::PathBuf::from("/nonexistent/path/to/file.jsonl");
+        let (msg, cwd, count) = extract_session_summary(&path);
+        assert_eq!(msg, "(unreadable session)");
+        assert_eq!(cwd, "");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_discover_sessions_empty_dir() {
+        let dir = TempDir::new().unwrap();
+        let result = discover_sessions_from(dir.path()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_discover_sessions_nonexistent_dir() {
+        let result = discover_sessions_from(Path::new("/nonexistent/path")).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_discover_sessions_with_project() {
+        let dir = TempDir::new().unwrap();
+        let project_dir = dir.path().join("-Users-steve-myproject");
+        fs::create_dir(&project_dir).unwrap();
+
+        write_jsonl(&project_dir, "abc123.jsonl", &[
+            r#"{"type":"user","message":{"content":"Hello from the test session here"},"cwd":"/tmp"}"#,
+        ]);
+
+        let result = discover_sessions_from(dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].session_id, "abc123");
+        assert_eq!(result[0].project_display, "Users/steve/myproject");
+        assert_eq!(result[0].first_message, "Hello from the test session here");
+    }
+
+    #[test]
+    fn test_discover_sessions_skips_non_jsonl() {
+        let dir = TempDir::new().unwrap();
+        let project_dir = dir.path().join("myproject");
+        fs::create_dir(&project_dir).unwrap();
+
+        write_jsonl(&project_dir, "session.jsonl", &[
+            r#"{"type":"user","message":{"content":"A valid session message content"}}"#,
+        ]);
+        write_jsonl(&project_dir, "notes.txt", &["not a session"]);
+
+        let result = discover_sessions_from(dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+    }
 }

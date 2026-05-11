@@ -70,7 +70,7 @@ export default function Terminal({ session }: Props) {
             sessionId: session.session_id,
             cols: term.cols,
             rows: term.rows,
-          }).catch(() => {});
+          }).catch((err) => console.warn("resize_terminal failed:", err));
         }
       });
     });
@@ -93,7 +93,8 @@ export default function Terminal({ session }: Props) {
           if (mounted) term.write(event.payload);
         }
       );
-      unlisteners.push(outputUnlisten);
+      if (mounted) unlisteners.push(outputUnlisten);
+      else { outputUnlisten(); return; }
 
       const exitUnlisten = await listen<number>(
         `pty-exit-${session.session_id}`,
@@ -106,13 +107,14 @@ export default function Terminal({ session }: Props) {
           );
         }
       );
-      unlisteners.push(exitUnlisten);
+      if (mounted) unlisteners.push(exitUnlisten);
+      else { exitUnlisten(); return; }
 
       const inputDisposable = term.onData((data) => {
         invoke("write_terminal", {
           sessionId: session.session_id,
           data,
-        }).catch(() => {});
+        }).catch((err) => console.error("write_terminal failed:", err));
       });
 
       try {
@@ -141,7 +143,7 @@ export default function Terminal({ session }: Props) {
       resizeObserver.disconnect();
       unlisteners.forEach((fn) => fn());
       invoke("kill_terminal", { sessionId: session.session_id }).catch(
-        () => {}
+        (err) => console.warn("kill_terminal cleanup failed:", err)
       );
       term.dispose();
     };

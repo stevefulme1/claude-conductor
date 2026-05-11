@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { SessionMeta } from "../types";
 
 interface Props {
@@ -8,29 +9,36 @@ interface Props {
 }
 
 function shortenPath(path: string): string {
-  const home = "/Users/";
-  if (path.startsWith(home)) {
-    const after = path.slice(home.length);
-    const slash = after.indexOf("/");
-    return slash >= 0 ? "~" + after.slice(slash) : "~";
+  const homePatterns = ["/Users/", "/home/"];
+  for (const prefix of homePatterns) {
+    if (path.startsWith(prefix)) {
+      const after = path.slice(prefix.length);
+      const slash = after.indexOf("/");
+      return slash >= 0 ? "~" + after.slice(slash) : "~";
+    }
   }
   return path;
 }
 
 export default function SessionCard({ session, isActive, timeAgo, onClick }: Props) {
+  const [hovered, setHovered] = useState(false);
+
+  const background = isActive
+    ? styles.active.background
+    : hovered
+    ? "var(--bg-hover)"
+    : "transparent";
+
   return (
     <button
       onClick={onClick}
       style={{
         ...styles.card,
         ...(isActive ? styles.active : {}),
+        background,
       }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.background = "transparent";
-      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <div style={styles.top}>
         <span style={styles.project}>{shortenPath(session.cwd)}</span>

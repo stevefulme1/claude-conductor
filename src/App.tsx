@@ -24,7 +24,7 @@ export default function App() {
         }}
       >
         {activeSession ? (
-          <Terminal session={activeSession} />
+          <Terminal key={activeSession.session_id} session={activeSession} />
         ) : (
           <EmptyState />
         )}

@@ -2,23 +2,27 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::thread;
+use std::sync::mpsc;
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
+    reader_handle: Option<JoinHandle<()>>,
 }
 
 static PTY_MAP: Mutex<Option<HashMap<String, PtyInstance>>> = Mutex::new(None);
 
-fn with_map<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut HashMap<String, PtyInstance>) -> R,
-{
-    let mut guard = PTY_MAP.lock();
-    let map = guard.get_or_insert_with(HashMap::new);
-    f(map)
+fn validate_size(cols: u16, rows: u16) -> Result<(), String> {
+    if cols == 0 || cols > 500 {
+        return Err(format!("Invalid cols {cols}: must be 1..=500"));
+    }
+    if rows == 0 || rows > 200 {
+        return Err(format!("Invalid rows {rows}: must be 1..=200"));
+    }
+    Ok(())
 }
 
 pub fn spawn_pty(
@@ -29,6 +33,8 @@ pub fn spawn_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    validate_size(cols, rows)?;
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -65,7 +71,7 @@ pub fn spawn_pty(
     let sid = session_id.clone();
     let app_clone = app.clone();
 
-    thread::spawn(move || {
+    let reader_handle = thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
@@ -74,9 +80,13 @@ pub fn spawn_pty(
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     let _ = app_clone.emit(&format!("pty-output-{}", sid), data);
                 }
-                Err(_) => break,
+                Err(e) => {
+                    log::debug!("PTY reader error for {}: {}", sid, e);
+                    break;
+                }
             }
         }
+
         let exit_status = child.wait().ok();
         let code = exit_status
             .map(|s| s.exit_code() as i32)
@@ -84,58 +94,83 @@ pub fn spawn_pty(
         let _ = app_clone.emit(&format!("pty-exit-{}", sid), code);
     });
 
-    with_map(|map| {
-        map.insert(
-            session_id,
-            PtyInstance {
-                writer,
-                master: pair.master,
-            },
-        );
-    });
+    let mut guard = PTY_MAP.lock();
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(
+        session_id,
+        PtyInstance {
+            writer,
+            master: pair.master,
+            reader_handle: Some(reader_handle),
+        },
+    );
 
     Ok(())
 }
 
 pub fn write_pty(session_id: &str, data: &str) -> Result<(), String> {
-    with_map(|map| {
-        if let Some(instance) = map.get_mut(session_id) {
-            instance
-                .writer
-                .write_all(data.as_bytes())
-                .map_err(|e| format!("Write failed: {e}"))?;
-            instance
-                .writer
-                .flush()
-                .map_err(|e| format!("Flush failed: {e}"))?;
-            Ok(())
-        } else {
-            Err("Session not found".to_string())
-        }
-    })
+    let mut guard = PTY_MAP.lock();
+    let map = guard.get_or_insert_with(HashMap::new);
+    if let Some(instance) = map.get_mut(session_id) {
+        instance
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| format!("Write failed: {e}"))?;
+        instance
+            .writer
+            .flush()
+            .map_err(|e| format!("Flush failed: {e}"))?;
+        Ok(())
+    } else {
+        Err("Session not found".to_string())
+    }
 }
 
 pub fn resize_pty(session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    with_map(|map| {
-        if let Some(instance) = map.get(session_id) {
-            instance
-                .master
-                .resize(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-                .map_err(|e| format!("Resize failed: {e}"))?;
-            Ok(())
-        } else {
-            Err("Session not found".to_string())
-        }
-    })
+    validate_size(cols, rows)?;
+
+    let mut guard = PTY_MAP.lock();
+    let map = guard.get_or_insert_with(HashMap::new);
+    if let Some(instance) = map.get(session_id) {
+        instance
+            .master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Resize failed: {e}"))?;
+        Ok(())
+    } else {
+        Err("Session not found".to_string())
+    }
 }
 
-pub fn kill_pty(session_id: &str) {
-    with_map(|map| {
-        map.remove(session_id);
-    });
+pub fn kill_pty(session_id: &str) -> Result<(), String> {
+    let instance = {
+        let mut guard = PTY_MAP.lock();
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.remove(session_id)
+    };
+
+    let Some(mut instance) = instance else {
+        return Ok(());
+    };
+
+    drop(instance.writer);
+    drop(instance.master);
+
+    if let Some(handle) = instance.reader_handle.take() {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = handle.join();
+            let _ = tx.send(());
+        });
+        if rx.recv_timeout(Duration::from_secs(5)).is_err() {
+            log::warn!("Reader thread for {} did not exit within 5s", session_id);
+        }
+    }
+
+    Ok(())
 }

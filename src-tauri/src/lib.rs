@@ -34,6 +34,9 @@ fn spawn_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    if !Path::new(&cwd).is_dir() {
+        return Err(format!("Directory does not exist: {cwd}"));
+    }
     pty::spawn_pty(app, session_id, claude_session_id, cwd, cols, rows)
 }
 
@@ -49,8 +52,7 @@ fn resize_terminal(session_id: String, cols: u16, rows: u16) -> Result<(), Strin
 
 #[tauri::command]
 fn kill_terminal(session_id: String) -> Result<(), String> {
-    pty::kill_pty(&session_id);
-    Ok(())
+    pty::kill_pty(&session_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
