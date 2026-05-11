@@ -9,11 +9,20 @@ import { SessionMeta } from "../types";
 
 interface Props {
   session: SessionMeta;
+  visible: boolean;
+  onClosed: () => void;
 }
 
-export default function Terminal({ session }: Props) {
+export default function Terminal({ session, visible, onClosed }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<"idle" | "running" | "exited">("idle");
+
+  useEffect(() => {
+    if (visible && fitRef.current) {
+      requestAnimationFrame(() => fitRef.current?.fit());
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (!termRef.current) return;
@@ -58,6 +67,7 @@ export default function Terminal({ session }: Props) {
     });
 
     const fit = new FitAddon();
+    fitRef.current = fit;
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
 
@@ -120,6 +130,7 @@ export default function Terminal({ session }: Props) {
           term.writeln(
             `\x1b[38;2;102;102;102m▸ Session ended (exit ${event.payload})\x1b[0m`
           );
+          onClosed();
         }
       );
       if (mounted) unlisteners.push(exitUnlisten);
@@ -164,12 +175,13 @@ export default function Terminal({ session }: Props) {
       invoke("kill_terminal", { sessionId: session.session_id }).catch(
         (err) => console.warn("kill_terminal cleanup failed:", err)
       );
+      fitRef.current = null;
       term.dispose();
     };
   }, [session.session_id]);
 
   return (
-    <div style={styles.wrapper}>
+    <div style={{ ...styles.wrapper, display: visible ? "flex" : "none" }}>
       <div style={styles.toolbar}>
         <div style={styles.sessionInfo}>
           <span style={styles.dot(status)} />

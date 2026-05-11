@@ -12,10 +12,22 @@ function startDrag(e: React.MouseEvent) {
 }
 
 export default function App() {
-  const [activeSession, setActiveSession] = useState<SessionMeta | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
+
+  const activeSession = openedSessions.find(s => s.session_id === activeSessionId) ?? null;
 
   const handleSessionSelect = useCallback((session: SessionMeta) => {
-    setActiveSession(session);
+    setActiveSessionId(session.session_id);
+    setOpenedSessions(prev => {
+      if (prev.some(s => s.session_id === session.session_id)) return prev;
+      return [...prev, session];
+    });
+  }, []);
+
+  const handleSessionClosed = useCallback((sessionId: string) => {
+    setOpenedSessions(prev => prev.filter(s => s.session_id !== sessionId));
+    setActiveSessionId(prev => prev === sessionId ? null : prev);
   }, []);
 
   return (
@@ -31,11 +43,15 @@ export default function App() {
         }}
       >
         <div onMouseDown={startDrag} style={{ height: 52, flexShrink: 0, cursor: "default" }} />
-        {activeSession ? (
-          <Terminal key={activeSession.session_id} session={activeSession} />
-        ) : (
-          <EmptyState />
-        )}
+        {openedSessions.map(session => (
+          <Terminal
+            key={session.session_id}
+            session={session}
+            visible={session.session_id === activeSessionId}
+            onClosed={() => handleSessionClosed(session.session_id)}
+          />
+        ))}
+        {!activeSessionId && <EmptyState />}
       </main>
     </div>
   );
