@@ -2,6 +2,7 @@ mod config;
 mod digest;
 mod pty;
 mod sessions;
+mod shell_env;
 mod sso;
 
 use sessions::SessionMeta;

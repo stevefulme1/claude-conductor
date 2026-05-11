@@ -23,6 +23,7 @@ export default function App() {
           overflow: "hidden",
         }}
       >
+        <div data-tauri-drag-region style={{ height: 52, flexShrink: 0 }} />
         {activeSession ? (
           <Terminal key={activeSession.session_id} session={activeSession} />
         ) : (

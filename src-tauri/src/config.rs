@@ -199,18 +199,22 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
         };
     }
 
+    let shell_env = crate::shell_env::get_shell_env();
     let base = cmd.split('/').next_back().unwrap_or(cmd);
     logs.push(format!("Command: {cmd}"));
 
-    let on_path = std::process::Command::new("which")
-        .arg(base)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let resolved_path = if std::path::Path::new(cmd).is_file() {
+        Some(cmd.to_string())
+    } else {
+        crate::shell_env::resolve_executable(base, &shell_env)
+    };
 
-    if !on_path {
-        let full_path_exists = std::path::Path::new(cmd).exists();
-        if !full_path_exists {
+    let resolved_path = match resolved_path {
+        Some(p) => {
+            logs.push(format!("✓ Binary found: {p}"));
+            p
+        }
+        None => {
             logs.push(format!("✗ Binary '{base}' not found on PATH"));
             logs.push("Ensure the command is installed and accessible".into());
             return McpStatus {
@@ -218,16 +222,7 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
                 logs,
             };
         }
-        logs.push(format!("✓ Binary found at absolute path: {cmd}"));
-    } else {
-        let resolved = std::process::Command::new("which")
-            .arg(base)
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-        logs.push(format!("✓ Binary found: {resolved}"));
-    }
+    };
 
     if !server.args.is_empty() {
         logs.push(format!("Args: {}", server.args.join(" ")));
@@ -272,9 +267,13 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
         }
     }
 
-    let mut spawn_cmd = std::process::Command::new(cmd);
+    let mut spawn_cmd = std::process::Command::new(&resolved_path);
     for arg in &server.args {
         spawn_cmd.arg(arg);
+    }
+
+    for (key, val) in &shell_env {
+        spawn_cmd.env(key, val);
     }
 
     if let Some(env) = env_obj {

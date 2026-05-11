@@ -147,7 +147,7 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
 
   return (
     <aside style={styles.sidebar}>
-      <div style={styles.header}>
+      <div style={styles.header} data-tauri-drag-region>
         <div style={styles.titleRow}>
           <div style={styles.logoArea}>
             <div style={styles.logo}>C</div>
