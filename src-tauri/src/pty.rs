@@ -44,6 +44,18 @@ fn find_utf8_boundary(buf: &[u8], len: usize) -> usize {
     len
 }
 
+fn resolve_executable(name: &str, env: &HashMap<String, String>) -> Option<String> {
+    if let Some(path_var) = env.get("PATH") {
+        for dir in path_var.split(':') {
+            let candidate = format!("{}/{}", dir, name);
+            if std::path::Path::new(&candidate).is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 fn get_shell_env() -> HashMap<String, String> {
     let mut guard = SHELL_ENV.lock();
     if let Some(ref cached) = *guard {
@@ -100,7 +112,10 @@ pub fn spawn_pty(
 
     let shell_env = get_shell_env();
 
-    let mut cmd = CommandBuilder::new("claude");
+    let claude_path = resolve_executable("claude", &shell_env)
+        .ok_or_else(|| "Failed to launch claude: 'claude' not found in PATH. Install it with: npm install -g @anthropic-ai/claude-code".to_string())?;
+
+    let mut cmd = CommandBuilder::new(claude_path);
     cmd.arg("--resume");
     cmd.arg(&claude_session_id);
     cmd.cwd(&cwd);
