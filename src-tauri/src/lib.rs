@@ -76,8 +76,28 @@ fn get_config() -> Result<config::ClaudeConfig, String> {
 }
 
 #[tauri::command]
-fn verify_mcp() -> Result<HashMap<String, bool>, String> {
+fn verify_mcp() -> Result<HashMap<String, config::McpStatus>, String> {
     config::verify_mcp_tools().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn verify_mcp_single(name: String) -> Result<config::McpStatus, String> {
+    config::verify_mcp_server(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_mcp_env(update: config::McpEnvUpdate) -> Result<(), String> {
+    config::update_mcp_env(update).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_mcp_auth(server_name: String, token: String) -> Result<(), String> {
+    config::update_mcp_auth_header(&server_name, &token).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_mcp(server_name: String, enabled: bool) -> Result<(), String> {
+    config::toggle_mcp_server(&server_name, enabled).map_err(|e| e.to_string())
 }
 
 fn start_digest_timer() {
@@ -123,6 +143,10 @@ pub fn run() {
             get_digest,
             get_config,
             verify_mcp,
+            verify_mcp_single,
+            update_mcp_env,
+            update_mcp_auth,
+            toggle_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
