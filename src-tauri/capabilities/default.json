@@ -20,6 +20,7 @@
       ]
     },
     "shell:allow-stdin-write",
-    "shell:allow-kill"
+    "shell:allow-kill",
+    "core:window:allow-start-dragging"
   ]
 }

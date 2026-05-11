@@ -1,8 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SessionMeta } from "../types";
 import SessionCard from "./SessionCard";
 import ConfigPanel from "./ConfigPanel";
+
+function startDrag(e: React.MouseEvent) {
+  if (e.buttons === 1 && e.detail === 1) {
+    getCurrentWindow().startDragging();
+  }
+}
 
 interface Props {
   activeSession: SessionMeta | null;
@@ -147,7 +154,7 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
 
   return (
     <aside style={styles.sidebar}>
-      <div style={styles.header} data-tauri-drag-region>
+      <div style={styles.header} onMouseDown={startDrag}>
         <div style={styles.titleRow}>
           <div style={styles.logoArea}>
             <div style={styles.logo}>C</div>

@@ -1,8 +1,15 @@
 import { useState, useCallback } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Sidebar from "./components/Sidebar";
 import Terminal from "./components/Terminal";
 import EmptyState from "./components/EmptyState";
 import { SessionMeta } from "./types";
+
+function startDrag(e: React.MouseEvent) {
+  if (e.buttons === 1 && e.detail === 1) {
+    getCurrentWindow().startDragging();
+  }
+}
 
 export default function App() {
   const [activeSession, setActiveSession] = useState<SessionMeta | null>(null);
@@ -23,7 +30,7 @@ export default function App() {
           overflow: "hidden",
         }}
       >
-        <div data-tauri-drag-region style={{ height: 52, flexShrink: 0 }} />
+        <div onMouseDown={startDrag} style={{ height: 52, flexShrink: 0, cursor: "default" }} />
         {activeSession ? (
           <Terminal key={activeSession.session_id} session={activeSession} />
         ) : (
