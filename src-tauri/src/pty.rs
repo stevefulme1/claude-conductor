@@ -72,8 +72,10 @@ pub fn spawn_pty(
         .ok_or_else(|| "Failed to launch claude: 'claude' not found in PATH. Install it with: npm install -g @anthropic-ai/claude-code".to_string())?;
 
     let mut cmd = CommandBuilder::new(claude_path);
-    cmd.arg("--resume");
-    cmd.arg(&claude_session_id);
+    if !claude_session_id.is_empty() {
+        cmd.arg("--resume");
+        cmd.arg(&claude_session_id);
+    }
     cmd.cwd(&cwd);
 
     for (key, value) in &shell_env {

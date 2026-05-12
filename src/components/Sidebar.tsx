@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import { SessionMeta } from "../types";
 import SessionCard from "./SessionCard";
 import ConfigPanel from "./ConfigPanel";
@@ -14,6 +15,7 @@ function startDrag(e: React.MouseEvent) {
 interface Props {
   activeSession: SessionMeta | null;
   onSelect: (session: SessionMeta) => void;
+  onNewSession: (cwd: string) => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -53,7 +55,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, onSelect }: Props) {
+export default function Sidebar({ activeSession, onSelect, onNewSession }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -104,6 +106,13 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
       });
     } catch (e) {
       console.error("Failed to rename session:", e);
+    }
+  }
+
+  async function handleNewSession() {
+    const selected = await open({ directory: true, multiple: false, title: "Choose project directory" });
+    if (typeof selected === "string") {
+      onNewSession(selected);
     }
   }
 
@@ -163,11 +172,28 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
               <div style={styles.subtitle}>{sessions.length} sessions</div>
             </div>
           </div>
-          <button
-            onClick={() => setCollapsed(true)}
-            style={styles.collapseBtn}
-            title="Collapse sidebar"
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button
+              onClick={handleNewSession}
+              style={styles.newBtn}
+              title="New session"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setCollapsed(true)}
+              style={styles.collapseBtn}
+              title="Collapse sidebar"
+            >
             <svg
               width="16"
               height="16"
@@ -179,6 +205,7 @@ export default function Sidebar({ activeSession, onSelect }: Props) {
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
+          </div>
         </div>
         <div style={styles.searchWrap}>
           <svg
@@ -353,6 +380,12 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: {
     fontSize: 11,
     color: "var(--text-tertiary)",
+  },
+  newBtn: {
+    padding: 6,
+    borderRadius: "var(--radius-sm)",
+    color: "var(--accent)",
+    transition: "var(--transition)",
   },
   collapseBtn: {
     padding: 6,

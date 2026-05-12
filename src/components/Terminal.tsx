@@ -96,15 +96,23 @@ export default function Terminal({ session, visible, onClosed }: Props) {
     });
     resizeObserver.observe(termRef.current);
 
+    const isNew = !session.file_path;
+
     async function start() {
       setStatus("running");
 
-      term.writeln(
-        `\x1b[38;2;212;132;90m▸ Resuming session in ${session.cwd}\x1b[0m`
-      );
-      term.writeln(
-        `\x1b[38;2;102;102;102m  ${session.first_message}\x1b[0m`
-      );
+      if (isNew) {
+        term.writeln(
+          `\x1b[38;2;212;132;90m▸ Starting new session in ${session.cwd}\x1b[0m`
+        );
+      } else {
+        term.writeln(
+          `\x1b[38;2;212;132;90m▸ Resuming session in ${session.cwd}\x1b[0m`
+        );
+        term.writeln(
+          `\x1b[38;2;102;102;102m  ${session.first_message}\x1b[0m`
+        );
+      }
       term.writeln("");
 
       const outputUnlisten = await listen<string>(
@@ -149,7 +157,7 @@ export default function Terminal({ session, visible, onClosed }: Props) {
       try {
         await invoke("spawn_terminal", {
           sessionId: session.session_id,
-          claudeSessionId: session.session_id,
+          claudeSessionId: isNew ? "" : session.session_id,
           cwd: session.cwd,
           cols: term.cols,
           rows: term.rows,
