@@ -11,12 +11,18 @@ interface Props {
   session: SessionMeta;
   label: string;
   visible: boolean;
-  onClosed: () => void;
+  onStatusChange: (status: "running" | "exited") => void;
 }
 
-export default function Terminal({ session, label, visible, onClosed }: Props) {
+function stripControl(s: string): string {
+  return s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+}
+
+export default function Terminal({ session, label, visible, onStatusChange }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const onStatusRef = useRef(onStatusChange);
+  onStatusRef.current = onStatusChange;
   const [status, setStatus] = useState<"idle" | "running" | "exited">("idle");
 
   useEffect(() => {
@@ -101,6 +107,7 @@ export default function Terminal({ session, label, visible, onClosed }: Props) {
 
     async function start() {
       setStatus("running");
+      onStatusRef.current("running");
 
       if (isNew) {
         term.writeln(
@@ -111,7 +118,7 @@ export default function Terminal({ session, label, visible, onClosed }: Props) {
           `\x1b[38;2;212;132;90m▸ Resuming session in ${session.cwd}\x1b[0m`
         );
         term.writeln(
-          `\x1b[38;2;102;102;102m  ${session.first_message}\x1b[0m`
+          `\x1b[38;2;102;102;102m  ${stripControl(session.first_message)}\x1b[0m`
         );
       }
       term.writeln("");
@@ -135,11 +142,11 @@ export default function Terminal({ session, label, visible, onClosed }: Props) {
         (event) => {
           if (!mounted) return;
           setStatus("exited");
+          onStatusRef.current("exited");
           term.writeln("");
           term.writeln(
             `\x1b[38;2;102;102;102m▸ Session ended (exit ${event.payload})\x1b[0m`
           );
-          onClosed();
         }
       );
       if (mounted) unlisteners.push(exitUnlisten);
@@ -184,6 +191,7 @@ export default function Terminal({ session, label, visible, onClosed }: Props) {
       invoke("kill_terminal", { sessionId: session.session_id }).catch(
         (err) => console.warn("kill_terminal cleanup failed:", err)
       );
+      onStatusRef.current("exited");
       fitRef.current = null;
       term.dispose();
     };

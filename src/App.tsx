@@ -25,6 +25,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
   openedRef.current = openedSessions;
@@ -79,9 +80,12 @@ export default function App() {
     });
   }, []);
 
-  const handleSessionClosed = useCallback((sessionId: string) => {
-    setOpenedSessions(prev => prev.filter(s => s.session_id !== sessionId));
-    setActiveSessionId(prev => prev === sessionId ? null : prev);
+  const handleStatusChange = useCallback((sessionId: string, status: "running" | "exited") => {
+    if (status === "running") {
+      runningSessions.current.add(sessionId);
+    } else {
+      runningSessions.current.delete(sessionId);
+    }
   }, []);
 
   useEffect(() => {
@@ -125,9 +129,10 @@ export default function App() {
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (e) => {
-      if (openedRef.current.length > 0) {
+      const running = runningSessions.current.size;
+      if (running > 0) {
         const confirmed = window.confirm(
-          `You have ${openedRef.current.length} active session(s). Close anyway?`
+          `You have ${running} running session(s). Close anyway?`
         );
         if (!confirmed) {
           e.preventDefault();
@@ -168,7 +173,7 @@ export default function App() {
             session={session}
             label={labels[session.session_id] || ""}
             visible={session.session_id === activeSessionId}
-            onClosed={() => handleSessionClosed(session.session_id)}
+            onStatusChange={(status) => handleStatusChange(session.session_id, status)}
           />
         ))}
         {!activeSessionId && openedSessions.length === 0 && <EmptyState />}

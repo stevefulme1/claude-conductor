@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -170,7 +170,7 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
 
     let mut guard = SESSION_CACHE.lock();
     let cache = guard.get_or_insert_with(HashMap::new);
-    let mut seen_keys = Vec::new();
+    let mut seen_keys = HashSet::new();
     let mut results = vec![];
 
     for project_entry in fs::read_dir(projects_dir)? {
@@ -222,7 +222,7 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
                 Err(_) => continue,
             };
 
-            seen_keys.push(file_path_str.clone());
+            seen_keys.insert(file_path_str.clone());
 
             if let Some(cached) = cache.get(&file_path_str) {
                 if cached.mtime == modified {
