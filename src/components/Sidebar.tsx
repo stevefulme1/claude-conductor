@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
 import { SessionMeta } from "../types";
 import SessionCard from "./SessionCard";
 import ConfigPanel from "./ConfigPanel";
@@ -15,7 +14,7 @@ function startDrag(e: React.MouseEvent) {
 interface Props {
   activeSession: SessionMeta | null;
   onSelect: (session: SessionMeta) => void;
-  onNewSession: (cwd: string) => void;
+  onNewSession: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -109,10 +108,13 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
     }
   }
 
-  async function handleNewSession() {
-    const selected = await open({ directory: true, multiple: false, title: "Choose project directory" });
-    if (typeof selected === "string") {
-      onNewSession(selected);
+  async function deleteSession(sessionId: string, filePath: string) {
+    if (!window.confirm("Delete this session? This cannot be undone.")) return;
+    try {
+      await invoke("delete_session", { filePath });
+      setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+    } catch (e) {
+      console.error("Failed to delete session:", e);
     }
   }
 
@@ -174,9 +176,9 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <button
-              onClick={handleNewSession}
+              onClick={onNewSession}
               style={styles.newBtn}
-              title="New session"
+              title="New session (Cmd+N)"
             >
               <svg
                 width="16"
@@ -256,6 +258,9 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
                   label={labels[session.session_id] || ""}
                   onRename={(label) =>
                     renameSession(session.session_id, label)
+                  }
+                  onDelete={() =>
+                    deleteSession(session.session_id, session.file_path)
                   }
                   onClick={() => onSelect(session)}
                 />

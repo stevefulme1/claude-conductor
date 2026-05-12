@@ -1,7 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import Sidebar from "./components/Sidebar";
 import Terminal from "./components/Terminal";
+import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
 import { SessionMeta } from "./types";
 
@@ -21,8 +24,19 @@ function generateId(): string {
 export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const openedRef = useRef(openedSessions);
+  const activeRef = useRef(activeSessionId);
+  openedRef.current = openedSessions;
+  activeRef.current = activeSessionId;
 
   const activeSession = openedSessions.find(s => s.session_id === activeSessionId) ?? null;
+
+  useEffect(() => {
+    invoke<Record<string, string>>("get_session_labels")
+      .then(setLabels)
+      .catch(() => {});
+  }, []);
 
   const handleSessionSelect = useCallback((session: SessionMeta) => {
     setActiveSessionId(session.session_id);
@@ -32,16 +46,18 @@ export default function App() {
     });
   }, []);
 
-  const handleNewSession = useCallback((cwd: string) => {
+  const handleNewSession = useCallback(async () => {
+    const selected = await open({ directory: true, multiple: false, title: "Choose project directory" });
+    if (typeof selected !== "string") return;
     const id = generateId();
-    const dirName = cwd.split("/").pop() || cwd;
+    const dirName = selected.split("/").pop() || selected;
     const session: SessionMeta = {
       session_id: id,
-      project_path: cwd,
+      project_path: selected,
       project_display: dirName,
       last_modified: new Date().toISOString(),
       first_message: "New session",
-      cwd,
+      cwd: selected,
       message_count: 0,
       file_path: "",
     };
@@ -49,14 +65,86 @@ export default function App() {
     setActiveSessionId(id);
   }, []);
 
+  const closeSession = useCallback((sessionId: string) => {
+    invoke("kill_terminal", { sessionId }).catch(() => {});
+    setOpenedSessions(prev => {
+      const next = prev.filter(s => s.session_id !== sessionId);
+      setActiveSessionId(curr => {
+        if (curr !== sessionId) return curr;
+        const idx = prev.findIndex(s => s.session_id === sessionId);
+        if (next.length === 0) return null;
+        return next[Math.min(idx, next.length - 1)].session_id;
+      });
+      return next;
+    });
+  }, []);
+
   const handleSessionClosed = useCallback((sessionId: string) => {
     setOpenedSessions(prev => prev.filter(s => s.session_id !== sessionId));
     setActiveSessionId(prev => prev === sessionId ? null : prev);
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key === "n") {
+        e.preventDefault();
+        handleNewSession();
+      } else if (meta && e.key === "w") {
+        e.preventDefault();
+        if (activeRef.current) closeSession(activeRef.current);
+      } else if (meta && e.key === "[") {
+        e.preventDefault();
+        switchTab(-1);
+      } else if (meta && e.key === "]") {
+        e.preventDefault();
+        switchTab(1);
+      } else if (meta && e.key >= "1" && e.key <= "9") {
+        e.preventDefault();
+        const idx = parseInt(e.key) - 1;
+        const sessions = openedRef.current;
+        if (idx < sessions.length) {
+          setActiveSessionId(sessions[idx].session_id);
+        }
+      }
+    }
+
+    function switchTab(dir: number) {
+      const sessions = openedRef.current;
+      const current = activeRef.current;
+      if (sessions.length === 0) return;
+      const idx = sessions.findIndex(s => s.session_id === current);
+      const next = (idx + dir + sessions.length) % sessions.length;
+      setActiveSessionId(sessions[next].session_id);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleNewSession, closeSession]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onCloseRequested(async (e) => {
+      if (openedRef.current.length > 0) {
+        const confirmed = window.confirm(
+          `You have ${openedRef.current.length} active session(s). Close anyway?`
+        );
+        if (!confirmed) {
+          e.preventDefault();
+          return;
+        }
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
+
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
-      <Sidebar activeSession={activeSession} onSelect={handleSessionSelect} onNewSession={handleNewSession} />
+      <Sidebar
+        activeSession={activeSession}
+        onSelect={handleSessionSelect}
+        onNewSession={handleNewSession}
+      />
       <main
         style={{
           flex: 1,
@@ -67,15 +155,23 @@ export default function App() {
         }}
       >
         <div onMouseDown={startDrag} style={{ height: 52, flexShrink: 0, cursor: "default" }} />
+        <TabBar
+          sessions={openedSessions}
+          activeSessionId={activeSessionId}
+          labels={labels}
+          onSelect={setActiveSessionId}
+          onClose={closeSession}
+        />
         {openedSessions.map(session => (
           <Terminal
             key={session.session_id}
             session={session}
+            label={labels[session.session_id] || ""}
             visible={session.session_id === activeSessionId}
             onClosed={() => handleSessionClosed(session.session_id)}
           />
         ))}
-        {!activeSessionId && <EmptyState />}
+        {!activeSessionId && openedSessions.length === 0 && <EmptyState />}
       </main>
     </div>
   );

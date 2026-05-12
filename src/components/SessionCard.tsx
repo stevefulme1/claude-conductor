@@ -7,6 +7,7 @@ interface Props {
   timeAgo: string;
   label: string;
   onRename: (label: string) => void;
+  onDelete: () => void;
   onClick: () => void;
 }
 
@@ -28,6 +29,7 @@ export default function SessionCard({
   timeAgo,
   label,
   onRename,
+  onDelete,
   onClick,
 }: Props) {
   const [hovered, setHovered] = useState(false);
@@ -94,22 +96,26 @@ export default function SessionCard({
           </div>
           <div style={styles.topRight}>
             {hovered && (
-              <button
-                onClick={startRename}
-                style={styles.renameBtn}
-                title="Rename session"
-              >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+              <>
+                <button
+                  onClick={startRename}
+                  style={styles.actionBtn}
+                  title="Rename session"
                 >
-                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                </svg>
-              </button>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  style={{ ...styles.actionBtn, color: "var(--danger)" }}
+                  title="Delete session"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
+                </button>
+              </>
             )}
             <span style={styles.time}>{timeAgo}</span>
           </div>
@@ -179,7 +185,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-tertiary)",
     flexShrink: 0,
   },
-  renameBtn: {
+  actionBtn: {
     padding: 2,
     borderRadius: 3,
     color: "var(--text-tertiary)",

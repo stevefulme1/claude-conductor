@@ -9,11 +9,12 @@ import { SessionMeta } from "../types";
 
 interface Props {
   session: SessionMeta;
+  label: string;
   visible: boolean;
   onClosed: () => void;
 }
 
-export default function Terminal({ session, visible, onClosed }: Props) {
+export default function Terminal({ session, label, visible, onClosed }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<"idle" | "running" | "exited">("idle");
@@ -188,12 +189,15 @@ export default function Terminal({ session, visible, onClosed }: Props) {
     };
   }, [session.session_id]);
 
+  const displayName = label || session.cwd;
+
   return (
     <div style={{ ...styles.wrapper, display: visible ? "flex" : "none" }}>
       <div style={styles.toolbar}>
         <div style={styles.sessionInfo}>
           <span style={styles.dot(status)} />
-          <span style={styles.label}>{session.cwd}</span>
+          <span style={styles.toolbarLabel}>{displayName}</span>
+          {label && <span style={styles.toolbarPath}>{session.cwd}</span>}
         </div>
         <div style={styles.sessionId}>{session.session_id.slice(0, 8)}</div>
       </div>
@@ -210,27 +214,27 @@ const styles = {
     overflow: "hidden",
   },
   toolbar: {
-    height: 40,
-    minHeight: 40,
+    height: 36,
+    minHeight: 36,
     padding: "0 16px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "var(--bg-secondary)",
-    borderBottom: "1px solid var(--border)",
-    paddingTop: 28,
-    paddingBottom: 0,
-    boxSizing: "content-box" as const,
+    background: "var(--bg-tertiary)",
+    borderBottom: "1px solid var(--border-subtle)",
   },
   sessionInfo: {
     display: "flex",
     alignItems: "center",
     gap: 8,
+    minWidth: 0,
+    flex: 1,
   },
   dot: (status: string): React.CSSProperties => ({
     width: 8,
     height: 8,
     borderRadius: "50%",
+    flexShrink: 0,
     background:
       status === "running"
         ? "var(--success)"
@@ -240,15 +244,28 @@ const styles = {
     boxShadow:
       status === "running" ? "0 0 6px rgba(74, 222, 128, 0.4)" : "none",
   }),
-  label: {
+  toolbarLabel: {
     fontSize: 13,
-    color: "var(--text-secondary)",
+    color: "var(--text-primary)",
     fontFamily: "'SF Mono', monospace",
+    fontWeight: 500,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  toolbarPath: {
+    fontSize: 11,
+    color: "var(--text-tertiary)",
+    fontFamily: "'SF Mono', monospace",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   sessionId: {
     fontSize: 11,
     color: "var(--text-tertiary)",
     fontFamily: "'SF Mono', monospace",
+    flexShrink: 0,
   },
   terminal: {
     flex: 1,
