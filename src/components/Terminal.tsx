@@ -18,18 +18,58 @@ function stripControl(s: string): string {
   return s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
 }
 
+function buildTermTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const termBg = cs.getPropertyValue("--term-bg").trim() || "#0d0d0d";
+  const termFg = cs.getPropertyValue("--term-fg").trim() || "#e8e8e8";
+  const termCursor = cs.getPropertyValue("--term-cursor").trim() || "#d4845a";
+  const termSel = cs.getPropertyValue("--term-selection").trim() || "rgba(212,132,90,0.3)";
+  const isDark = termBg.startsWith("#0") || termBg.startsWith("#1");
+  return {
+    background: termBg,
+    foreground: termFg,
+    cursor: termCursor,
+    cursorAccent: termBg,
+    selectionBackground: termSel,
+    black: isDark ? "#1e1e1e" : "#2e2e2e",
+    red: isDark ? "#f87171" : "#dc2626",
+    green: isDark ? "#4ade80" : "#16a34a",
+    yellow: isDark ? "#fbbf24" : "#d97706",
+    blue: isDark ? "#60a5fa" : "#2563eb",
+    magenta: isDark ? "#c084fc" : "#9333ea",
+    cyan: isDark ? "#22d3ee" : "#0891b2",
+    white: isDark ? "#e8e8e8" : "#1a1a1a",
+    brightBlack: isDark ? "#666" : "#888",
+    brightRed: isDark ? "#fca5a5" : "#ef4444",
+    brightGreen: isDark ? "#86efac" : "#22c55e",
+    brightYellow: isDark ? "#fde68a" : "#eab308",
+    brightBlue: isDark ? "#93c5fd" : "#3b82f6",
+    brightMagenta: isDark ? "#d8b4fe" : "#a855f7",
+    brightCyan: isDark ? "#67e8f9" : "#06b6d4",
+    brightWhite: isDark ? "#fff" : "#000",
+  };
+}
+
 export default function Terminal({ session, label, visible, onStatusChange }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const onStatusRef = useRef(onStatusChange);
   onStatusRef.current = onStatusChange;
   const [status, setStatus] = useState<"idle" | "running" | "exited">("idle");
+  const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
 
   useEffect(() => {
-    if (visible && fitRef.current) {
-      requestAnimationFrame(() => fitRef.current?.fit());
+    if (visible) {
+      invoke("resume_terminal", { sessionId: session.session_id }).catch(() => {});
+      if (fitRef.current) {
+        requestAnimationFrame(() => {
+          fitRef.current?.fit();
+        });
+      }
+    } else {
+      invoke("pause_terminal", { sessionId: session.session_id }).catch(() => {});
     }
-  }, [visible]);
+  }, [visible, session.session_id]);
 
   useEffect(() => {
     if (!termRef.current) return;
@@ -39,29 +79,7 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
     const term = new XTerm({
-      theme: {
-        background: "#0d0d0d",
-        foreground: "#e8e8e8",
-        cursor: "#d4845a",
-        cursorAccent: "#0d0d0d",
-        selectionBackground: "rgba(212, 132, 90, 0.3)",
-        black: "#1e1e1e",
-        red: "#f87171",
-        green: "#4ade80",
-        yellow: "#fbbf24",
-        blue: "#60a5fa",
-        magenta: "#c084fc",
-        cyan: "#22d3ee",
-        white: "#e8e8e8",
-        brightBlack: "#666",
-        brightRed: "#fca5a5",
-        brightGreen: "#86efac",
-        brightYellow: "#fde68a",
-        brightBlue: "#93c5fd",
-        brightMagenta: "#d8b4fe",
-        brightCyan: "#67e8f9",
-        brightWhite: "#fff",
-      },
+      theme: buildTermTheme(),
       fontFamily:
         "'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       fontSize: 13,
@@ -102,6 +120,14 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
       }, 100);
     });
     resizeObserver.observe(termRef.current);
+
+    const themeObserver = new MutationObserver(() => {
+      term.options.theme = buildTermTheme();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
 
     const isNew = !session.file_path;
 
@@ -187,6 +213,7 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
       mounted = false;
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
+      themeObserver.disconnect();
       unlisteners.forEach((fn) => fn());
       invoke("kill_terminal", { sessionId: session.session_id }).catch(
         (err) => console.warn("kill_terminal cleanup failed:", err)

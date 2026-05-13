@@ -13,8 +13,11 @@ function startDrag(e: React.MouseEvent) {
 
 interface Props {
   activeSession: SessionMeta | null;
+  openSessionIds: Set<string>;
   onSelect: (session: SessionMeta) => void;
   onNewSession: () => void;
+  theme: "system" | "light" | "dark";
+  onThemeChange: (theme: "system" | "light" | "dark") => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -54,7 +57,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, onSelect, onNewSession }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -254,6 +257,7 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
                   isActive={
                     activeSession?.session_id === session.session_id
                   }
+                  isOpen={openSessionIds.has(session.session_id)}
                   timeAgo={timeAgo(session.last_modified)}
                   label={labels[session.session_id] || ""}
                   onRename={(label) =>
@@ -275,7 +279,7 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
         )}
       </div>
 
-      {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
+      <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} />
 
       <div style={styles.footer}>
         <div style={styles.footerRow}>
@@ -293,18 +297,29 @@ export default function Sidebar({ activeSession, onSelect, onNewSession }: Props
             Refresh
           </button>
           <button
+            onClick={() => {
+              const cycle: Record<string, "system" | "light" | "dark"> = { system: "light", light: "dark", dark: "system" };
+              onThemeChange(cycle[theme]);
+            }}
+            style={styles.settingsBtn}
+            title={`Theme: ${theme}`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {theme === "dark" ? (
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              ) : theme === "light" ? (
+                <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>
+              ) : (
+                <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /><path d="M16 12a4 4 0 0 1-4 4V8a4 4 0 0 1 4 4z" fill="currentColor" /></>
+              )}
+            </svg>
+          </button>
+          <button
             onClick={() => setShowConfig(!showConfig)}
             style={styles.settingsBtn}
             title="Settings"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>

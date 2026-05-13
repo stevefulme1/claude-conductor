@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import Terminal from "./components/Terminal";
 import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
+import { useTheme } from "./hooks/useTheme";
 import { SessionMeta } from "./types";
 
 function startDrag(e: React.MouseEvent) {
@@ -15,13 +16,11 @@ function startDrag(e: React.MouseEvent) {
 }
 
 function generateId(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
+  return crypto.randomUUID();
 }
 
 export default function App() {
+  const { theme, setTheme } = useTheme();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
@@ -32,6 +31,7 @@ export default function App() {
   activeRef.current = activeSessionId;
 
   const activeSession = openedSessions.find(s => s.session_id === activeSessionId) ?? null;
+  const openSessionIds = useMemo(() => new Set(openedSessions.map(s => s.session_id)), [openedSessions]);
 
   useEffect(() => {
     invoke<Record<string, string>>("get_session_labels")
@@ -76,6 +76,15 @@ export default function App() {
         if (next.length === 0) return null;
         return next[Math.min(idx, next.length - 1)].session_id;
       });
+      return next;
+    });
+  }, []);
+
+  const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
+    setOpenedSessions(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
       return next;
     });
   }, []);
@@ -147,8 +156,11 @@ export default function App() {
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
       <Sidebar
         activeSession={activeSession}
+        openSessionIds={openSessionIds}
         onSelect={handleSessionSelect}
         onNewSession={handleNewSession}
+        theme={theme}
+        onThemeChange={setTheme}
       />
       <main
         style={{
@@ -166,6 +178,7 @@ export default function App() {
           labels={labels}
           onSelect={setActiveSessionId}
           onClose={closeSession}
+          onReorder={handleReorder}
         />
         {openedSessions.map(session => (
           <Terminal

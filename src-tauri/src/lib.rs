@@ -63,6 +63,16 @@ fn kill_terminal(session_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn pause_terminal(session_id: String) -> Result<(), String> {
+    pty::pause_pty(&session_id)
+}
+
+#[tauri::command]
+fn resume_terminal(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    pty::resume_pty(&session_id, &app)
+}
+
+#[tauri::command]
 fn refresh_digest() -> Result<String, String> {
     digest::write_digest().map_err(|e| e.to_string())
 }
@@ -167,6 +177,8 @@ pub fn run() {
             write_terminal,
             resize_terminal,
             kill_terminal,
+            pause_terminal,
+            resume_terminal,
             refresh_digest,
             get_digest,
             get_config,

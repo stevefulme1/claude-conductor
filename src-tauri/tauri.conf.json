@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Claude Conductor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "identifier": "com.claudeconductor.app",
   "build": {
     "frontendDist": "../dist",
@@ -39,7 +39,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "signingIdentity": "-",
+      "signingIdentity": "Apple Development: stevefulme@yahoo.com (SBVH5GVWMM)",
       "entitlements": "Entitlements.plist",
       "dmg": {
         "appPosition": { "x": 180, "y": 170 },

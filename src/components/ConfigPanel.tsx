@@ -4,10 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import { McpServer, McpStatus, ClaudeConfig } from "../types";
 
 interface Props {
+  visible: boolean;
   onClose: () => void;
 }
 
-export default function ConfigPanel({ onClose }: Props) {
+export default function ConfigPanel({ visible, onClose }: Props) {
   const [config, setConfig] = useState<ClaudeConfig | null>(null);
   const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
   const [error, setError] = useState<string | null>(null);
@@ -222,9 +223,11 @@ export default function ConfigPanel({ onClose }: Props) {
     );
   }
 
+  const panelStyle = { ...styles.panel, display: visible ? "flex" : "none" };
+
   if (error && !config) {
     return (
-      <div style={styles.panel}>
+      <div style={panelStyle}>
         {renderHeader()}
         <div style={styles.error}>{error}</div>
       </div>
@@ -233,7 +236,7 @@ export default function ConfigPanel({ onClose }: Props) {
 
   if (!config) {
     return (
-      <div style={styles.panel}>
+      <div style={panelStyle}>
         {renderHeader()}
         <div style={styles.loading}>Loading...</div>
       </div>
@@ -246,7 +249,7 @@ export default function ConfigPanel({ onClose }: Props) {
   const totalCount = config.mcp_servers.length;
 
   return (
-    <div style={styles.panel}>
+    <div style={panelStyle}>
       {renderHeader()}
 
       <div style={styles.content}>

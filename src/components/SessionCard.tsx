@@ -4,6 +4,7 @@ import { SessionMeta } from "../types";
 interface Props {
   session: SessionMeta;
   isActive: boolean;
+  isOpen: boolean;
   timeAgo: string;
   label: string;
   onRename: (label: string) => void;
@@ -26,6 +27,7 @@ function shortenPath(path: string): string {
 export default function SessionCard({
   session,
   isActive,
+  isOpen,
   timeAgo,
   label,
   onRename,
@@ -91,7 +93,10 @@ export default function SessionCard({
       ) : (
         <div style={styles.top}>
           <div style={styles.topLeft}>
-            {label && <span style={styles.label}>{label}</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {isOpen && <span style={styles.openDot} title="Session open in tab" />}
+              {label && <span style={styles.label}>{label}</span>}
+            </div>
             <span style={styles.project}>{shortenPath(session.cwd)}</span>
           </div>
           <div style={styles.topRight}>
@@ -163,6 +168,14 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 4,
     flexShrink: 0,
+  },
+  openDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    background: "var(--success)",
+    flexShrink: 0,
+    boxShadow: "0 0 4px rgba(74, 222, 128, 0.4)",
   },
   label: {
     fontSize: 12,

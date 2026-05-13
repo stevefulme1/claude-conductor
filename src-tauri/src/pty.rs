@@ -2,15 +2,21 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+
+const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
+const FLUSH_THRESHOLD: usize = 32 * 1024;
 
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     reader_handle: Option<JoinHandle<()>>,
+    paused: Arc<AtomicBool>,
 }
 
 static PTY_MAP: Mutex<Option<HashMap<String, PtyInstance>>> = Mutex::new(None);
@@ -105,10 +111,23 @@ pub fn spawn_pty(
 
     let sid = session_id.clone();
     let app_clone = app.clone();
+    let paused = Arc::new(AtomicBool::new(false));
+    let paused_clone = paused.clone();
 
     let reader_handle = thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut carry = Vec::new();
+        let mut pending = String::new();
+        let mut last_flush = Instant::now();
+        let event_name = format!("pty-output-{}", sid);
+
+        let flush = |pending: &mut String, app: &AppHandle, event: &str| -> bool {
+            if pending.is_empty() {
+                return true;
+            }
+            let data = std::mem::take(pending);
+            app.emit(event, data).is_ok()
+        };
 
         loop {
             let offset = carry.len();
@@ -126,10 +145,19 @@ pub fn spawn_pty(
                     let boundary = find_utf8_boundary(&buf, total);
 
                     if boundary > 0 {
-                        let text = String::from_utf8_lossy(&buf[..boundary]).to_string();
-                        if app_clone.emit(&format!("pty-output-{}", sid), text).is_err() {
-                            log::warn!("Event channel closed for session {}, stopping reader", sid);
-                            break;
+                        if paused_clone.load(Ordering::Relaxed) {
+                            pending.push_str(&String::from_utf8_lossy(&buf[..boundary]));
+                        } else {
+                            pending.push_str(&String::from_utf8_lossy(&buf[..boundary]));
+                            let should_flush = pending.len() >= FLUSH_THRESHOLD
+                                || last_flush.elapsed() >= FLUSH_INTERVAL;
+                            if should_flush {
+                                if !flush(&mut pending, &app_clone, &event_name) {
+                                    log::warn!("Event channel closed for session {}, stopping reader", sid);
+                                    break;
+                                }
+                                last_flush = Instant::now();
+                            }
                         }
                     }
 
@@ -144,18 +172,15 @@ pub fn spawn_pty(
             }
 
             if !carry.is_empty() && carry.len() >= 4 {
-                let text = String::from_utf8_lossy(&carry).to_string();
-                if app_clone.emit(&format!("pty-output-{}", sid), text).is_err() {
-                    break;
-                }
+                pending.push_str(&String::from_utf8_lossy(&carry));
                 carry.clear();
             }
         }
 
         if !carry.is_empty() {
-            let text = String::from_utf8_lossy(&carry).to_string();
-            let _ = app_clone.emit(&format!("pty-output-{}", sid), text);
+            pending.push_str(&String::from_utf8_lossy(&carry));
         }
+        let _ = flush(&mut pending, &app_clone, &event_name);
 
         let exit_status = match child.wait() {
             Ok(status) => status.exit_code() as i32,
@@ -177,6 +202,7 @@ pub fn spawn_pty(
             writer,
             master: pair.master,
             reader_handle: Some(reader_handle),
+            paused,
         },
     );
 
@@ -220,6 +246,31 @@ pub fn resize_pty(session_id: &str, cols: u16, rows: u16) -> Result<(), String> 
     } else {
         Err("Session not found".to_string())
     }
+}
+
+pub fn pause_pty(session_id: &str) -> Result<(), String> {
+    let guard = PTY_MAP.lock();
+    if let Some(map) = guard.as_ref() {
+        if let Some(instance) = map.get(session_id) {
+            instance.paused.store(true, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+
+pub fn resume_pty(session_id: &str, app: &AppHandle) -> Result<(), String> {
+    let guard = PTY_MAP.lock();
+    if let Some(map) = guard.as_ref() {
+        if let Some(instance) = map.get(session_id) {
+            instance.paused.store(false, Ordering::Relaxed);
+        }
+    }
+    drop(guard);
+    // The reader thread will flush pending output on the next read cycle
+    // since paused is now false. Emit a nudge event so the frontend knows
+    // to expect data.
+    let _ = app.emit(&format!("pty-resumed-{}", session_id), ());
+    Ok(())
 }
 
 pub fn kill_pty(session_id: &str) -> Result<(), String> {
