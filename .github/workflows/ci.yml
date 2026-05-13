@@ -111,6 +111,8 @@ jobs:
       - run: npm ci
 
       - name: Build Tauri app
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
         run: npx tauri build
 
       - name: Upload build artifacts
