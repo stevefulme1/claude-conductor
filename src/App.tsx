@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,28 +6,30 @@ import Sidebar from "./components/Sidebar";
 import Terminal from "./components/Terminal";
 import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
-import StatusPanel from "./components/StatusPanel";
-import FileChanges from "./components/FileChanges";
-import DiffViewer from "./components/DiffViewer";
-import UsagePanel from "./components/UsagePanel";
-import CheckpointPanel from "./components/CheckpointPanel";
-import SplitPane, { splitPane, removePane, collectSessionIds } from "./components/SplitPane";
-import KanbanBoard from "./components/KanbanBoard";
-import AgentProfileEditor from "./components/AgentProfileEditor";
-import BrowserPreview from "./components/BrowserPreview";
-import CodeSearch from "./components/CodeSearch";
-import GitGraph from "./components/GitGraph";
-import ChainEditor from "./components/ChainEditor";
-import TemplateSelector from "./components/TemplateSelector";
-import McpMarketplace from "./components/McpMarketplace";
-import SessionReplay from "./components/SessionReplay";
-import CompliancePanel from "./components/CompliancePanel";
-import BenchmarksPanel from "./components/BenchmarksPanel";
-import PluginManager from "./components/PluginManager";
-import VoiceInput from "./components/VoiceInput";
-import SpatialCanvas from "./components/SpatialCanvas";
-import CIMonitor from "./components/CIMonitor";
-import HelpMenu from "./components/HelpMenu";
+import { splitPane, removePane, collectSessionIds } from "./components/SplitPane";
+
+const StatusPanel = lazy(() => import("./components/StatusPanel"));
+const FileChanges = lazy(() => import("./components/FileChanges"));
+const DiffViewer = lazy(() => import("./components/DiffViewer"));
+const UsagePanel = lazy(() => import("./components/UsagePanel"));
+const CheckpointPanel = lazy(() => import("./components/CheckpointPanel"));
+const SplitPane = lazy(() => import("./components/SplitPane"));
+const KanbanBoard = lazy(() => import("./components/KanbanBoard"));
+const AgentProfileEditor = lazy(() => import("./components/AgentProfileEditor"));
+const BrowserPreview = lazy(() => import("./components/BrowserPreview"));
+const CodeSearch = lazy(() => import("./components/CodeSearch"));
+const GitGraph = lazy(() => import("./components/GitGraph"));
+const ChainEditor = lazy(() => import("./components/ChainEditor"));
+const TemplateSelector = lazy(() => import("./components/TemplateSelector"));
+const McpMarketplace = lazy(() => import("./components/McpMarketplace"));
+const SessionReplay = lazy(() => import("./components/SessionReplay"));
+const CompliancePanel = lazy(() => import("./components/CompliancePanel"));
+const BenchmarksPanel = lazy(() => import("./components/BenchmarksPanel"));
+const PluginManager = lazy(() => import("./components/PluginManager"));
+const VoiceInput = lazy(() => import("./components/VoiceInput"));
+const SpatialCanvas = lazy(() => import("./components/SpatialCanvas"));
+const CIMonitor = lazy(() => import("./components/CIMonitor"));
+const HelpMenu = lazy(() => import("./components/HelpMenu"));
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, SessionTemplate, AgentSuggestion, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
@@ -387,6 +389,7 @@ export default function App() {
   }, []);
 
   return (
+    <Suspense fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", width: "100vw", background: "var(--bg-primary)", color: "var(--text-secondary)" }}>Loading...</div>}>
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
       <Sidebar
         activeSession={activeSession}
@@ -744,5 +747,6 @@ export default function App() {
         onClose={() => setShowHelp(false)}
       />
     </div>
+    </Suspense>
   );
 }

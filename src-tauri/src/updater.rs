@@ -20,6 +20,10 @@ pub fn check_for_updates() -> Result<UpdateInfo, String> {
     let output = Command::new("curl")
         .args([
             "-sL",
+            "--connect-timeout",
+            "5",
+            "--max-time",
+            "10",
             "-H",
             "Accept: application/vnd.github+json",
             "https://api.github.com/repos/stevefulme1/claude-conductor/releases/latest",
