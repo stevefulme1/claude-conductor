@@ -2,6 +2,48 @@
 
 All notable changes to Claude Conductor are documented in this file.
 
+## [0.5.0] - 2026-05-17
+
+### Added
+- **Status Panel** — new dashboard (pulse icon in sidebar) showing active PTYs, open tabs, discovered sessions, process ID, and MCP server connection health with green/red indicators.
+- **`get_status` command** — Tauri backend command returning session stats and system info for the status panel.
+
+### Fixed
+- **PTY unbounded memory** — paused terminal output buffer capped at 4MB with front-drain to prevent OOM on verbose sessions.
+- **Stale data on tab switch** — buffered output now flushes immediately when a paused terminal becomes visible, instead of waiting for the next PTY read.
+- **Delayed last characters** — added timer-based flush after every read iteration so partial output doesn't wait for the next byte.
+- **Terminal error sanitization** — error messages passed through `stripControl()` before writing to xterm, preventing terminal escape injection.
+- **Input handler leak** — `inputDisposable` from `term.onData()` now properly disposed on cleanup via promise chain.
+- **Digest timer shutdown** — timer thread uses `AtomicBool` shutdown signal with 5s polling instead of infinite loop, enabling clean app exit.
+- **Session cache lock contention** — filesystem scan split into 4 phases (scan → lock → parse → lock) to minimize time holding the global mutex.
+- **SSO callback truncation** — OAuth callback buffer increased from 4KB to 16KB to handle large IdP responses.
+- **Non-atomic config writes** — config files now written to temp file with 0600 permissions then atomically renamed, preventing credential exposure on crash.
+
+### Security
+- **Supply chain** — Fedora CI build tries `dnf install rustup` before falling back to curl pipe, with `--profile minimal` flag.
+- **cargo-audit** — uses `--locked` flag for reproducible installs.
+
+## [0.4.0] - 2026-05-12
+
+### Added
+- **PTY output batching** — reader thread coalesces output with 16ms interval and 32KB threshold, reducing IPC event flooding from hundreds/sec to ~60/sec.
+- **Pause/resume for hidden terminals** — background tabs stop emitting IPC events. Output buffers while paused and flushes on tab switch.
+- **`pause_terminal` / `resume_terminal` commands** — new Tauri commands for PTY pause/resume lifecycle.
+- **Dark mode for terminal** — xterm.js theme updates live via MutationObserver on `data-theme` attribute changes. Extracted `buildTermTheme()` helper.
+- **`useTheme` hook** — React hook managing dark/light/system theme preference with localStorage persistence and system media query listener.
+- **Tab bar** — multi-session tab switching with keyboard shortcuts (Cmd+1-9, Cmd+[/]).
+- **Session delete** — delete sessions from the tab bar context menu.
+- **Close confirmation** — warns before closing with running sessions.
+
+### Fixed
+- **Stale closure** — `onStatusChange` callback uses ref pattern to prevent stale closure captures.
+- **ANSI injection** — `first_message` stripped of control characters before display.
+- **O(n^2) session cache** — `seen_keys` changed from Vec to HashSet for O(1) lookups.
+- **Exited session retention** — exited sessions stay in tab bar to preserve scrollback history.
+
+### Changed
+- **CI** — skip codesign in GitHub Actions (local dev cert not available), add `contents: write` permission to release workflow.
+
 ## [0.3.0] - 2026-05-11
 
 ### Added

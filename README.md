@@ -9,6 +9,12 @@ A desktop session manager for [Claude Code](https://docs.anthropic.com/en/docs/c
 - **Time-grouped sidebar** — sessions organized by Today, Yesterday, This Week, This Month, Older
 - **Native terminal** — PTY-based terminal emulation via xterm.js with full color and input support
 - **One-click resume** — select a session and pick up where you left off
+- **Tab bar** — switch between multiple open sessions with keyboard shortcuts (Cmd+1-9, Cmd+[/])
+- **Dark/light mode** — theme toggle with system preference detection, applies to terminal and UI
+- **Status panel** — live view of active PTYs, open tabs, discovered sessions, and MCP server health
+- **Session naming** — custom labels that persist across restarts
+- **MCP server management** — add, configure, and monitor MCP servers with OAuth2 SSO support
+- **Optimized PTY** — batched output (16ms coalescing), paused background terminals, 4MB buffer cap
 
 ## Prerequisites
 
@@ -41,22 +47,27 @@ Production binaries are output to `src-tauri/target/release/bundle/`.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  React + xterm.js (src/)                    │
-│  Sidebar, SessionCard, Terminal, EmptyState  │
-├─────────────────────────────────────────────┤
-│  Tauri IPC (commands + events)              │
-├─────────────────────────────────────────────┤
-│  Rust backend (src-tauri/src/)              │
-│  pty.rs — PTY lifecycle management          │
-│  sessions.rs — session file discovery       │
-│  lib.rs — command dispatch + validation     │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  React + xterm.js (src/)                         │
+│  Sidebar, TabBar, Terminal, StatusPanel,          │
+│  ConfigPanel, SessionCard, EmptyState             │
+├──────────────────────────────────────────────────┤
+│  Tauri IPC (commands + events)                   │
+│  spawn/write/resize/kill/pause/resume terminal   │
+│  get_status, verify_mcp, list_sessions           │
+├──────────────────────────────────────────────────┤
+│  Rust backend (src-tauri/src/)                   │
+│  pty.rs — PTY lifecycle + output batching        │
+│  sessions.rs — session discovery + caching       │
+│  config.rs — MCP/settings with atomic writes     │
+│  sso.rs — OAuth2 SSO authentication              │
+│  lib.rs — command dispatch + status reporting    │
+└──────────────────────────────────────────────────┘
 ```
 
-**Rust backend** manages PTY sessions (spawn, write, resize, kill) and discovers Claude Code session files by parsing JSONL from `~/.claude/projects/`.
+**Rust backend** manages PTY sessions (spawn, write, resize, kill, pause, resume) with 16ms output batching, discovers Claude Code session files from `~/.claude/projects/`, and provides status reporting and MCP server health checks.
 
-**React frontend** renders a searchable sidebar of sessions and an xterm.js terminal that connects to the Rust PTY via Tauri events.
+**React frontend** renders a searchable sidebar, tab bar for multi-session switching, xterm.js terminal with theme support, status panel with live metrics, and MCP configuration panel.
 
 ## Project structure
 
@@ -64,22 +75,31 @@ Production binaries are output to `src-tauri/target/release/bundle/`.
 claude-conductor/
 ├── src/                    # React frontend
 │   ├── components/
+│   │   ├── ConfigPanel.tsx # MCP server settings
 │   │   ├── EmptyState.tsx  # Placeholder when no session selected
 │   │   ├── ErrorBoundary.tsx # Crash recovery
 │   │   ├── SessionCard.tsx # Individual session in sidebar
 │   │   ├── Sidebar.tsx     # Session list with search
-│   │   └── Terminal.tsx    # xterm.js terminal emulation
+│   │   ├── StatusPanel.tsx # Live status dashboard
+│   │   ├── TabBar.tsx      # Multi-session tab switching
+│   │   └── Terminal.tsx    # xterm.js terminal with theme support
+│   ├── hooks/
+│   │   └── useTheme.ts    # Dark/light/system theme management
 │   ├── __tests__/          # Vitest component tests
-│   ├── styles/global.css   # CSS custom properties
+│   ├── styles/global.css   # CSS custom properties (dark + light)
 │   ├── types.ts            # TypeScript interfaces
 │   ├── App.tsx             # Layout container
 │   └── main.tsx            # Entry point
 ├── src-tauri/
 │   └── src/
-│       ├── pty.rs          # Native PTY management
-│       ├── sessions.rs     # Session discovery + parsing
-│       ├── lib.rs          # Tauri command handlers
-│       └── main.rs         # Entry point
+│       ├── config.rs       # MCP/settings with atomic writes
+│       ├── digest.rs       # 30-day session digest generator
+│       ├── lib.rs          # Tauri command handlers + status
+│       ├── main.rs         # Entry point
+│       ├── pty.rs          # PTY management with output batching
+│       ├── sessions.rs     # Session discovery + mtime cache
+│       ├── shell_env.rs    # Shell environment propagation
+│       └── sso.rs          # OAuth2 SSO authentication
 ├── vitest.config.ts
 ├── vite.config.ts
 └── package.json
