@@ -16,6 +16,7 @@ mod sessions;
 mod sharing;
 mod shell_env;
 mod sso;
+mod updater;
 mod worktree;
 
 use sessions::SessionMeta;
@@ -280,6 +281,16 @@ fn rerun_ci(cwd: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_current_version() -> String {
+    updater::get_current_version()
+}
+
+#[tauri::command]
+fn check_for_updates() -> Result<updater::UpdateInfo, String> {
+    updater::check_for_updates()
+}
+
+#[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
     let sessions = sessions::discover_sessions()
@@ -512,6 +523,8 @@ pub fn run() {
             get_ci_status,
             get_ci_logs,
             rerun_ci,
+            get_current_version,
+            check_for_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
