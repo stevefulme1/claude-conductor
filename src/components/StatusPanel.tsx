@@ -10,8 +10,8 @@ interface StatusData {
 
 interface McpStatus {
   [name: string]: {
-    status: string;
-    error?: string;
+    reachable: boolean;
+    logs: string[];
   };
 }
 
@@ -121,14 +121,14 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
                         style={{
                           ...styles.mcpDot,
                           background:
-                            info.status === "ok"
+                            info.reachable
                               ? "var(--success)"
                               : "var(--danger)",
                         }}
                       />
                       <span style={styles.mcpName}>{name}</span>
                       <span style={styles.mcpStatus}>
-                        {info.status === "ok" ? "Connected" : info.error || "Error"}
+                        {info.reachable ? "Connected" : (info.logs?.slice(-1)[0] || "Error")}
                       </span>
                     </div>
                   ))}
