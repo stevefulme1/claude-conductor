@@ -15,6 +15,14 @@ interface McpStatus {
   };
 }
 
+interface DailyUsage {
+  total_sessions: number;
+  total_messages: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -24,6 +32,7 @@ interface Props {
 export default function StatusPanel({ visible, onClose, openSessionCount }: Props) {
   const [status, setStatus] = useState<StatusData | null>(null);
   const [mcp, setMcp] = useState<McpStatus | null>(null);
+  const [daily, setDaily] = useState<DailyUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,9 +42,11 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
     Promise.all([
       invoke<StatusData>("get_status").catch(() => null),
       invoke<McpStatus>("verify_mcp").catch(() => null),
-    ]).then(([s, m]) => {
+      invoke<DailyUsage>("get_daily_usage").catch(() => null),
+    ]).then(([s, m, d]) => {
       setStatus(s);
       setMcp(m);
+      setDaily(d);
       setLoading(false);
     });
   }, [visible]);
@@ -65,6 +76,20 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
                 <Stat label="Process ID" value={status?.pid ?? 0} />
               </div>
             </div>
+
+            {daily && (
+              <div style={styles.section}>
+                <div style={styles.sectionTitle}>Today's Usage</div>
+                <div style={styles.grid}>
+                  <Stat label="Sessions" value={daily.total_sessions} />
+                  <Stat label="Messages" value={daily.total_messages} />
+                  <Stat label="Input Tokens" value={daily.total_input_tokens.toLocaleString()} />
+                  <Stat label="Output Tokens" value={daily.total_output_tokens.toLocaleString()} />
+                  <Stat label="Total Tokens" value={(daily.total_input_tokens + daily.total_output_tokens).toLocaleString()} />
+                  <Stat label="Est. Cost" value={`$${daily.total_cost_usd.toFixed(2)}`} />
+                </div>
+              </div>
+            )}
 
             <div style={styles.section}>
               <div style={styles.sectionTitle}>MCP Servers</div>

@@ -76,22 +76,35 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
   const [labels, setLabels] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    loadSessions();
+    loadSessionsFast();
     loadLabels();
-    const interval = setInterval(loadSessions, 30000);
+    const interval = setInterval(loadSessionsFull, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  async function loadSessions() {
+  async function loadSessionsFast() {
+    try {
+      const result = await invoke<SessionMeta[]>("list_sessions_fast");
+      setSessions(result);
+      setError(null);
+      loadSessionsFull();
+    } catch (e) {
+      console.error("Failed to load sessions:", e);
+      setError(`Failed to load sessions: ${e}`);
+    }
+  }
+
+  async function loadSessionsFull() {
     try {
       const result = await invoke<SessionMeta[]>("list_sessions");
       setSessions(result);
       setError(null);
     } catch (e) {
       console.error("Failed to load sessions:", e);
-      setError(`Failed to load sessions: ${e}`);
     }
   }
+
+  const loadSessions = loadSessionsFull;
 
   async function loadLabels() {
     try {

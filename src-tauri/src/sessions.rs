@@ -163,6 +163,83 @@ pub fn discover_sessions() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error
     discover_sessions_from(&projects_dir)
 }
 
+/// Fast discovery that skips file content parsing — returns metadata from
+/// the filesystem only. Used for instant startup; full parse follows async.
+pub fn discover_sessions_fast() -> Result<Vec<SessionMeta>, Box<dyn std::error::Error>> {
+    let home = dirs::home_dir().ok_or("no home dir")?;
+    let projects_dir = home.join(".claude").join("projects");
+    if !projects_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    // Check if we have cached results — return those instantly
+    {
+        let guard = SESSION_CACHE.lock();
+        if let Some(cache) = guard.as_ref() {
+            if !cache.is_empty() {
+                let mut results: Vec<SessionMeta> = cache.values().map(|e| e.meta.clone()).collect();
+                results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+                if results.len() > MAX_SESSIONS {
+                    results.truncate(MAX_SESSIONS);
+                }
+                return Ok(results);
+            }
+        }
+    }
+
+    // No cache — build lightweight entries from filesystem metadata only
+    let mut results = Vec::new();
+    for project_entry in fs::read_dir(&projects_dir)? {
+        let project_entry = match project_entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let ft = match project_entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if ft.is_symlink() || !ft.is_dir() {
+            continue;
+        }
+        let project_name = project_entry.file_name().to_string_lossy().to_string();
+        let display = project_path_to_display(&project_name);
+        let entries = match fs::read_dir(project_entry.path()) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for file in entries {
+            let file = match file {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let fname = file.file_name().to_string_lossy().to_string();
+            if !fname.ends_with(".jsonl") {
+                continue;
+            }
+            let modified = match file.metadata().and_then(|m| m.modified()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let dt: DateTime<Utc> = modified.into();
+            results.push(SessionMeta {
+                session_id: fname.trim_end_matches(".jsonl").to_string(),
+                project_path: project_name.clone(),
+                project_display: display.clone(),
+                last_modified: dt.to_rfc3339(),
+                first_message: String::new(),
+                cwd: format!("/{}", &display),
+                message_count: 0,
+                file_path: file.path().to_string_lossy().to_string(),
+            });
+        }
+    }
+    results.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+    if results.len() > MAX_SESSIONS {
+        results.truncate(MAX_SESSIONS);
+    }
+    Ok(results)
+}
+
 fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<dyn std::error::Error>> {
     if !projects_dir.exists() {
         return Ok(vec![]);
