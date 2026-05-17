@@ -2,12 +2,15 @@ mod analytics;
 mod chaining;
 mod checkpoints;
 mod code_search;
+mod compliance;
 mod config;
 mod digest;
 mod file_tracker;
 mod git_graph;
 mod marketplace;
+mod plugins;
 mod pty;
+mod routing;
 mod sessions;
 mod sharing;
 mod shell_env;
@@ -344,6 +347,51 @@ fn install_mcp_from_marketplace(name: String) -> Result<(), String> {
     marketplace::install_mcp_from_marketplace(&name)
 }
 
+// Tier 2: Compliance Mode
+#[tauri::command]
+fn log_compliance_event(event: compliance::ComplianceEvent) -> Result<(), String> {
+    compliance::log_compliance_event(event)
+}
+
+#[tauri::command]
+fn get_compliance_log(limit: u32) -> Result<Vec<compliance::ComplianceEvent>, String> {
+    compliance::get_compliance_log(limit)
+}
+
+#[tauri::command]
+fn export_compliance_report(start_date: String, end_date: String) -> Result<String, String> {
+    compliance::export_compliance_report(&start_date, &end_date)
+}
+
+// Tier 2: Team Session Sharing (HTML export)
+#[tauri::command]
+fn generate_share_html(file_path: String) -> Result<String, String> {
+    sharing::generate_share_html(&file_path)
+}
+
+// Tier 2: Smart Session Routing
+#[tauri::command]
+fn suggest_agent(cwd: String) -> Result<routing::AgentSuggestion, String> {
+    routing::suggest_agent(&cwd)
+}
+
+// Tier 2: Performance Benchmarks
+#[tauri::command]
+fn get_performance_benchmarks() -> Result<analytics::PerformanceBenchmarks, String> {
+    analytics::get_performance_benchmarks()
+}
+
+// Tier 2: Plugin System
+#[tauri::command]
+fn discover_plugins() -> Result<Vec<plugins::PluginManifest>, String> {
+    plugins::discover_plugins()
+}
+
+#[tauri::command]
+fn load_plugin_config(name: String) -> Result<serde_json::Value, String> {
+    plugins::load_plugin_config(&name)
+}
+
 fn start_digest_timer(shutdown: Arc<AtomicBool>) {
     thread::spawn(move || {
         while !shutdown.load(Ordering::Relaxed) {
@@ -436,6 +484,14 @@ pub fn run() {
             delete_session_template,
             list_marketplace,
             install_mcp_from_marketplace,
+            log_compliance_event,
+            get_compliance_log,
+            export_compliance_report,
+            generate_share_html,
+            suggest_agent,
+            get_performance_benchmarks,
+            discover_plugins,
+            load_plugin_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

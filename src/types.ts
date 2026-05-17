@@ -184,6 +184,43 @@ export interface ReplayMessage {
   turn_number: number;
 }
 
+// Tier 2: Compliance Mode
+export interface ComplianceEvent {
+  timestamp: string;
+  session_id: string;
+  action: string;
+  details: string;
+  approved: boolean;
+}
+
+// Tier 2: Smart Session Routing
+export interface AgentSuggestion {
+  agent_name: string;
+  reason: string;
+  detected_language: string;
+  detected_framework: string;
+}
+
+// Tier 2: Performance Benchmarks
+export interface PerformanceBenchmarks {
+  avg_session_duration_secs: number;
+  avg_tokens_per_session: number;
+  avg_cost_per_session: number;
+  sessions_per_day: number;
+  most_used_agent: string;
+  success_rate: number;
+  total_sessions_analyzed: number;
+}
+
+// Tier 2: Plugin System
+export interface PluginManifest {
+  name: string;
+  version: string;
+  description: string;
+  entry_point: string;
+  hooks: string[];
+}
+
 // P3: Git Visualization
 export interface GitLogEntry {
   hash: string;

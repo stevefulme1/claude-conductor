@@ -49,23 +49,36 @@ export default function SessionCard({
     }
   }, [editing]);
 
-  async function handleExport(e: React.MouseEvent, mode: "file" | "clipboard") {
+  async function handleExport(e: React.MouseEvent, mode: "file" | "clipboard" | "html") {
     e.stopPropagation();
     if (!session.file_path) return;
     try {
-      const markdown = await invoke<string>("export_session", { filePath: session.file_path });
-      if (mode === "clipboard") {
-        await navigator.clipboard.writeText(markdown);
-        setExportNotice("Copied to clipboard");
-      } else {
-        const defaultName = `session-${session.session_id.slice(0, 8)}.md`;
+      if (mode === "html") {
+        const html = await invoke<string>("generate_share_html", { filePath: session.file_path });
+        const defaultName = `session-${session.session_id.slice(0, 8)}.html`;
         const destPath = await save({
           defaultPath: defaultName,
-          filters: [{ name: "Markdown", extensions: ["md"] }],
+          filters: [{ name: "HTML", extensions: ["html"] }],
         });
         if (destPath) {
-          await invoke("save_export", { destPath, content: markdown });
-          setExportNotice("Saved");
+          await invoke("save_export", { destPath, content: html });
+          setExportNotice("HTML saved");
+        }
+      } else {
+        const markdown = await invoke<string>("export_session", { filePath: session.file_path });
+        if (mode === "clipboard") {
+          await navigator.clipboard.writeText(markdown);
+          setExportNotice("Copied to clipboard");
+        } else {
+          const defaultName = `session-${session.session_id.slice(0, 8)}.md`;
+          const destPath = await save({
+            defaultPath: defaultName,
+            filters: [{ name: "Markdown", extensions: ["md"] }],
+          });
+          if (destPath) {
+            await invoke("save_export", { destPath, content: markdown });
+            setExportNotice("Saved");
+          }
         }
       }
     } catch (err) {
@@ -150,6 +163,16 @@ export default function SessionCard({
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => handleExport(e, "html")}
+                      style={styles.actionBtn}
+                      title="Share as HTML"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="16 18 22 12 16 6" />
+                        <polyline points="8 6 2 12 8 18" />
                       </svg>
                     </button>
                   </>

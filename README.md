@@ -120,4 +120,4 @@ npm run test:watch
 
 ## License
 
-[MIT](LICENSE)
+[CC BY-NC 4.0](LICENSE) — free for personal and educational use. Commercial use requires permission from the author.

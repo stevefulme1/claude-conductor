@@ -315,6 +315,119 @@ pub fn get_daily_usage() -> Result<DailyUsage, String> {
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PerformanceBenchmarks {
+    pub avg_session_duration_secs: f64,
+    pub avg_tokens_per_session: f64,
+    pub avg_cost_per_session: f64,
+    pub sessions_per_day: f64,
+    pub most_used_agent: String,
+    pub success_rate: f64,
+    pub total_sessions_analyzed: usize,
+}
+
+/// Scan all sessions and compute performance benchmarks.
+pub fn get_performance_benchmarks() -> Result<PerformanceBenchmarks, String> {
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+    if !projects_dir.exists() {
+        return Ok(PerformanceBenchmarks {
+            avg_session_duration_secs: 0.0,
+            avg_tokens_per_session: 0.0,
+            avg_cost_per_session: 0.0,
+            sessions_per_day: 0.0,
+            most_used_agent: "unknown".to_string(),
+            success_rate: 0.0,
+            total_sessions_analyzed: 0,
+        });
+    }
+
+    // Collect all JSONL files modified in the last 30 days
+    let cutoff = chrono::Local::now() - chrono::Duration::days(30);
+    let cutoff_date = cutoff.date_naive();
+    let mut files: Vec<(std::path::PathBuf, chrono::NaiveDate)> = Vec::new();
+
+    fn walk_all(dir: &Path, results: &mut Vec<(std::path::PathBuf, chrono::NaiveDate)>, cutoff: chrono::NaiveDate) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_all(&path, results, cutoff);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    if let Ok(meta) = fs::metadata(&path) {
+                        if let Ok(modified) = meta.modified() {
+                            let dt: chrono::DateTime<chrono::Local> = modified.into();
+                            let date = dt.date_naive();
+                            if date >= cutoff {
+                                results.push((path, date));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    walk_all(&projects_dir, &mut files, cutoff_date);
+
+    if files.is_empty() {
+        return Ok(PerformanceBenchmarks {
+            avg_session_duration_secs: 0.0,
+            avg_tokens_per_session: 0.0,
+            avg_cost_per_session: 0.0,
+            sessions_per_day: 0.0,
+            most_used_agent: "unknown".to_string(),
+            success_rate: 0.0,
+            total_sessions_analyzed: 0,
+        });
+    }
+
+    let mut total_duration = 0.0f64;
+    let mut total_tokens = 0u64;
+    let mut total_cost = 0.0f64;
+    let mut model_counts: HashMap<String, usize> = HashMap::new();
+    let mut success_count = 0usize;
+    let mut analyzed = 0usize;
+    let mut unique_dates: std::collections::HashSet<chrono::NaiveDate> = std::collections::HashSet::new();
+
+    for (file_path, date) in &files {
+        let path_str = file_path.to_string_lossy().to_string();
+        if let Ok(usage) = get_session_usage(&path_str) {
+            analyzed += 1;
+            total_duration += usage.duration_seconds;
+            total_tokens += usage.input_tokens + usage.output_tokens;
+            total_cost += usage.estimated_cost_usd;
+            unique_dates.insert(*date);
+
+            let model_key = normalize_model(&usage.model);
+            *model_counts.entry(model_key).or_insert(0) += 1;
+
+            // A session is "successful" if it has > 1 message (completed some work)
+            if usage.message_count > 1 {
+                success_count += 1;
+            }
+        }
+    }
+
+    let n = analyzed as f64;
+    let days = unique_dates.len().max(1) as f64;
+    let most_used = model_counts
+        .iter()
+        .max_by_key(|(_, &v)| v)
+        .map(|(k, _)| k.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(PerformanceBenchmarks {
+        avg_session_duration_secs: if n > 0.0 { total_duration / n } else { 0.0 },
+        avg_tokens_per_session: if n > 0.0 { total_tokens as f64 / n } else { 0.0 },
+        avg_cost_per_session: if n > 0.0 { total_cost / n } else { 0.0 },
+        sessions_per_day: analyzed as f64 / days,
+        most_used_agent: most_used,
+        success_rate: if n > 0.0 { (success_count as f64 / n) * 100.0 } else { 0.0 },
+        total_sessions_analyzed: analyzed,
+    })
+}
+
 /// Parse a JSONL session file and extract messages for replay.
 pub fn get_session_transcript(file_path: &str) -> Result<Vec<ReplayMessage>, String> {
     let path = Path::new(file_path);

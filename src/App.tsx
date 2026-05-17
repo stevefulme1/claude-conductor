@@ -21,8 +21,11 @@ import ChainEditor from "./components/ChainEditor";
 import TemplateSelector from "./components/TemplateSelector";
 import McpMarketplace from "./components/McpMarketplace";
 import SessionReplay from "./components/SessionReplay";
+import CompliancePanel from "./components/CompliancePanel";
+import BenchmarksPanel from "./components/BenchmarksPanel";
+import PluginManager from "./components/PluginManager";
 import { useTheme } from "./hooks/useTheme";
-import { SessionMeta, SessionTemplate, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
+import { SessionMeta, SessionTemplate, AgentSuggestion, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
 function startDrag(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 1) {
@@ -56,6 +59,10 @@ export default function App() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [replayFilePath, setReplayFilePath] = useState<string | null>(null);
+  const [showCompliance, setShowCompliance] = useState(false);
+  const [showBenchmarks, setShowBenchmarks] = useState(false);
+  const [showPlugins, setShowPlugins] = useState(false);
+  const [complianceEnabled, setComplianceEnabled] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -79,11 +86,29 @@ export default function App() {
     });
   }, []);
 
-  const handleNewSession = useCallback(async (agentCommand?: string) => {
+  const handleNewSession = useCallback(async (initialAgent?: string) => {
+    let agentCommand = initialAgent;
     const selected = await open({ directory: true, multiple: false, title: "Choose project directory" });
     if (typeof selected !== "string") return;
     const id = generateId();
     const dirName = selected.split("/").pop() || selected;
+
+    // Smart Session Routing: suggest agent based on project type
+    if (!agentCommand) {
+      try {
+        const suggestion = await invoke<AgentSuggestion>("suggest_agent", { cwd: selected });
+        if (suggestion.detected_language !== "Unknown") {
+          const accept = window.confirm(
+            `Detected: ${suggestion.detected_language} project (${suggestion.detected_framework})\n\nRecommended: ${suggestion.agent_name}\n\nUse recommended agent?`
+          );
+          if (accept) {
+            agentCommand = suggestion.agent_name;
+          }
+        }
+      } catch {
+        // Silently fall back to default
+      }
+    }
 
     // Determine the working directory (may be overridden by worktree)
     let cwd = selected;
@@ -122,7 +147,20 @@ export default function App() {
     }
     setOpenedSessions(prev => [...prev, session]);
     setActiveSessionId(id);
-  }, []);
+
+    // Compliance: log session start
+    if (complianceEnabled) {
+      invoke("log_compliance_event", {
+        event: {
+          timestamp: new Date().toISOString(),
+          session_id: id,
+          action: "session_start",
+          details: `New session in ${selected}`,
+          approved: true,
+        },
+      }).catch(() => {});
+    }
+  }, [complianceEnabled]);
 
   const closeSession = useCallback((sessionId: string) => {
     invoke("kill_terminal", { sessionId }).catch(() => {});
@@ -505,6 +543,38 @@ export default function App() {
               >
                 Search
               </button>
+              <button
+                onClick={() => setShowBenchmarks(true)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+                title="Performance Benchmarks"
+              >
+                Benchmarks
+              </button>
+              {complianceEnabled && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: "rgba(74, 158, 255, 0.15)",
+                    color: "#4a9eff",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setShowCompliance(true)}
+                  title="Compliance Mode active - click to view audit log"
+                >
+                  Compliance Mode
+                </span>
+              )}
             </div>
             <FileChanges
               cwd={activeSession.cwd}
@@ -586,6 +656,18 @@ export default function App() {
           onClose={() => setReplayFilePath(null)}
         />
       )}
+      <CompliancePanel
+        visible={showCompliance}
+        onClose={() => setShowCompliance(false)}
+      />
+      <BenchmarksPanel
+        visible={showBenchmarks}
+        onClose={() => setShowBenchmarks(false)}
+      />
+      <PluginManager
+        visible={showPlugins}
+        onClose={() => setShowPlugins(false)}
+      />
     </div>
   );
 }
