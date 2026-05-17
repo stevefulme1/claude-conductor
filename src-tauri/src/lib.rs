@@ -189,6 +189,44 @@ fn restore_checkpoint(cwd: String, checkpoint_id: String) -> Result<(), String> 
     checkpoints::restore_checkpoint(&cwd, &checkpoint_id)
 }
 
+// P2: Session Statuses
+#[tauri::command]
+fn get_session_statuses() -> Result<HashMap<String, String>, String> {
+    config::get_session_statuses().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_session_status(session_id: String, status: String) -> Result<(), String> {
+    config::set_session_status(&session_id, &status).map_err(|e| e.to_string())
+}
+
+// P2: Agent Profiles
+#[tauri::command]
+fn get_agent_profiles() -> Result<Vec<config::AgentProfile>, String> {
+    config::get_agent_profiles().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_agent_profile(profile: config::AgentProfile) -> Result<(), String> {
+    config::save_agent_profile(profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_agent_profile(name: String) -> Result<(), String> {
+    config::delete_agent_profile(&name).map_err(|e| e.to_string())
+}
+
+// P2: Dev Server Detection
+#[tauri::command]
+fn check_port(port: u16) -> Result<bool, String> {
+    config::check_port(port).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn detect_dev_servers() -> Result<Vec<config::DevServer>, String> {
+    config::detect_dev_servers().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
@@ -278,6 +316,13 @@ pub fn run() {
             list_checkpoints,
             restore_checkpoint,
             get_status,
+            get_session_statuses,
+            set_session_status,
+            get_agent_profiles,
+            save_agent_profile,
+            delete_agent_profile,
+            check_port,
+            detect_dev_servers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -96,3 +96,22 @@ export interface PaneNode {
   sessionId?: string;
   splitPercent?: number;
 }
+
+// P2: Session Status Kanban
+export type SessionStatus = 'planning' | 'running' | 'review' | 'done';
+
+// P2: Custom Agent Profiles
+export interface AgentProfile {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  description: string;
+  model_hint?: string;
+}
+
+// P2: Embedded Browser Preview
+export interface DevServer {
+  port: number;
+  url: string;
+}

@@ -781,6 +781,162 @@ pub fn add_mcp_server(server: NewMcpServer) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+fn conductor_config_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claude")
+        .join("conductor-config.json")
+}
+
+fn read_conductor_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let path = conductor_config_path();
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let data = fs::read_to_string(&path)?;
+    Ok(serde_json::from_str(&data)?)
+}
+
+fn write_conductor_config(val: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+    let path = conductor_config_path();
+    let output = serde_json::to_string_pretty(val)?;
+    write_config_file(&path, &output)?;
+    Ok(())
+}
+
+// -- P2: Session Statuses --
+
+pub fn get_session_statuses() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let config = read_conductor_config()?;
+    let statuses = config
+        .get("statuses")
+        .and_then(|v| serde_json::from_value::<HashMap<String, String>>(v.clone()).ok())
+        .unwrap_or_default();
+    Ok(statuses)
+}
+
+pub fn set_session_status(session_id: &str, status: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let valid = ["planning", "running", "review", "done"];
+    if !valid.contains(&status) {
+        return Err(format!("Invalid status '{}'. Must be one of: {:?}", status, valid).into());
+    }
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let mut config = read_conductor_config()?;
+    let statuses = config
+        .as_object_mut()
+        .ok_or("Invalid conductor config")?
+        .entry("statuses")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(obj) = statuses.as_object_mut() {
+        obj.insert(session_id.to_string(), serde_json::Value::String(status.to_string()));
+    }
+    write_conductor_config(&config)?;
+    Ok(())
+}
+
+// -- P2: Agent Profiles --
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentProfile {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_hint: Option<String>,
+}
+
+pub fn get_agent_profiles() -> Result<Vec<AgentProfile>, Box<dyn std::error::Error>> {
+    let config = read_conductor_config()?;
+    let profiles = config
+        .get("profiles")
+        .and_then(|v| serde_json::from_value::<Vec<AgentProfile>>(v.clone()).ok())
+        .unwrap_or_default();
+    Ok(profiles)
+}
+
+pub fn save_agent_profile(profile: AgentProfile) -> Result<(), Box<dyn std::error::Error>> {
+    if profile.name.trim().is_empty() {
+        return Err("Profile name cannot be empty".into());
+    }
+    if profile.command.trim().is_empty() {
+        return Err("Profile command cannot be empty".into());
+    }
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let mut config = read_conductor_config()?;
+    let profiles_val = config
+        .as_object_mut()
+        .ok_or("Invalid conductor config")?
+        .entry("profiles")
+        .or_insert_with(|| serde_json::json!([]));
+
+    let mut profiles: Vec<AgentProfile> = serde_json::from_value(profiles_val.clone()).unwrap_or_default();
+    // Upsert by name
+    if let Some(existing) = profiles.iter_mut().find(|p| p.name == profile.name) {
+        *existing = profile;
+    } else {
+        profiles.push(profile);
+    }
+    *profiles_val = serde_json::to_value(&profiles)?;
+    write_conductor_config(&config)?;
+    Ok(())
+}
+
+pub fn delete_agent_profile(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let mut config = read_conductor_config()?;
+    let profiles_val = config
+        .as_object_mut()
+        .ok_or("Invalid conductor config")?
+        .entry("profiles")
+        .or_insert_with(|| serde_json::json!([]));
+
+    let mut profiles: Vec<AgentProfile> = serde_json::from_value(profiles_val.clone()).unwrap_or_default();
+    let before = profiles.len();
+    profiles.retain(|p| p.name != name);
+    if profiles.len() == before {
+        return Err(format!("Profile '{}' not found", name).into());
+    }
+    *profiles_val = serde_json::to_value(&profiles)?;
+    write_conductor_config(&config)?;
+    Ok(())
+}
+
+// -- P2: Dev Server Detection --
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DevServer {
+    pub port: u16,
+    pub url: String,
+}
+
+pub fn check_port(port: u16) -> Result<bool, Box<dyn std::error::Error>> {
+    use std::net::TcpStream;
+    let addr = format!("127.0.0.1:{}", port);
+    match TcpStream::connect_timeout(
+        &addr.parse()?,
+        Duration::from_millis(300),
+    ) {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
+    }
+}
+
+pub fn detect_dev_servers() -> Result<Vec<DevServer>, Box<dyn std::error::Error>> {
+    let ports: &[u16] = &[3000, 3001, 4200, 5173, 5174, 8000, 8080, 8888];
+    let mut servers = Vec::new();
+    for &port in ports {
+        if check_port(port)? {
+            servers.push(DevServer {
+                port,
+                url: format!("http://localhost:{}", port),
+            });
+        }
+    }
+    Ok(servers)
+}
+
 fn labels_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))

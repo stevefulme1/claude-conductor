@@ -12,6 +12,9 @@ import DiffViewer from "./components/DiffViewer";
 import UsagePanel from "./components/UsagePanel";
 import CheckpointPanel from "./components/CheckpointPanel";
 import SplitPane, { splitPane, removePane, collectSessionIds } from "./components/SplitPane";
+import KanbanBoard from "./components/KanbanBoard";
+import AgentProfileEditor from "./components/AgentProfileEditor";
+import BrowserPreview from "./components/BrowserPreview";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
@@ -38,6 +41,9 @@ export default function App() {
   const [sessionAgents, setSessionAgents] = useState<Record<string, string>>({});
   const [paneLayout, setPaneLayout] = useState<PaneNode | null>(null);
   const [sessionWorktrees, setSessionWorktrees] = useState<Record<string, string>>({});
+  const [showKanban, setShowKanban] = useState(false);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -157,8 +163,12 @@ export default function App() {
   const handleStatusChange = useCallback((sessionId: string, status: "running" | "exited") => {
     if (status === "running") {
       runningSessions.current.add(sessionId);
+      // P2: Auto-move to "running" in kanban
+      invoke("set_session_status", { sessionId, status: "running" }).catch(() => {});
     } else {
       runningSessions.current.delete(sessionId);
+      // P2: Auto-move to "done" in kanban
+      invoke("set_session_status", { sessionId, status: "done" }).catch(() => {});
       // Desktop notification when a session completes and the app is not focused
       if (!document.hasFocus() && "Notification" in window && Notification.permission === "granted") {
         const session = openedRef.current.find(s => s.session_id === sessionId);
@@ -206,6 +216,11 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.shiftKey && e.key === "b") {
+        e.preventDefault();
+        setShowBrowser(prev => !prev);
+        return;
+      }
       if (meta && e.key === "d" && !e.shiftKey) {
         e.preventDefault();
         handleSplit("horizontal");
@@ -285,6 +300,9 @@ export default function App() {
         theme={theme}
         onThemeChange={setTheme}
         onShowStatus={() => setShowStatus(true)}
+        onToggleKanban={() => setShowKanban(prev => !prev)}
+        showKanban={showKanban}
+        onShowProfiles={() => setShowProfiles(true)}
       />
       <main
         style={{
@@ -306,7 +324,17 @@ export default function App() {
           onClose={closeSession}
           onReorder={handleReorder}
         />
-        {paneLayout ? (
+        {showKanban ? (
+          <KanbanBoard
+            sessions={openedSessions}
+            labels={labels}
+            sessionAgents={sessionAgents}
+            onSelect={(session) => {
+              handleSessionSelect(session);
+              setShowKanban(false);
+            }}
+          />
+        ) : paneLayout ? (
           <SplitPane
             node={paneLayout}
             renderTerminal={(sessionId) => {
@@ -417,6 +445,26 @@ export default function App() {
         onClose={() => setShowStatus(false)}
         openSessionCount={openedSessions.length}
       />
+      <AgentProfileEditor
+        visible={showProfiles}
+        onClose={() => setShowProfiles(false)}
+      />
+      {showBrowser && (
+        <div style={{
+          position: "fixed",
+          bottom: 0,
+          right: 0,
+          width: "50%",
+          height: "50%",
+          zIndex: 900,
+          boxShadow: "-2px -2px 12px rgba(0,0,0,0.3)",
+        }}>
+          <BrowserPreview
+            visible={showBrowser}
+            onClose={() => setShowBrowser(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
