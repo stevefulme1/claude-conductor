@@ -959,11 +959,11 @@ pub fn get_auth_info(server_name: &str) -> Result<AuthInfo, Box<dyn std::error::
 
     if name_lower.contains("amplitude") || url_lower.contains("amplitude.com") {
         return Ok(AuthInfo {
-            auth_type: "oauth".into(),
+            auth_type: "managed".into(),
             has_token: false,
             token_valid: false,
             provider: "Amplitude".into(),
-            oauth_url: Some("https://app.amplitude.com".into()),
+            oauth_url: None,
         });
     }
 

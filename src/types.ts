@@ -48,7 +48,7 @@ export interface ClaudeConfig {
 
 // Smart MCP Auth
 export interface AuthInfo {
-  auth_type: "token" | "oauth" | "none";
+  auth_type: "token" | "oauth" | "managed" | "none";
   has_token: boolean;
   token_valid: boolean;
   provider: string;

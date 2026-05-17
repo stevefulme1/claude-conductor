@@ -480,6 +480,18 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                           );
                         }
 
+                        if (authInfo.auth_type === "managed") {
+                          return (
+                            <span style={{
+                              fontSize: 11,
+                              color: "var(--accent)",
+                              padding: "4px 8px",
+                            }}>
+                              🔐 Auth managed by Claude Code
+                            </span>
+                          );
+                        }
+
                         // auth_type === "none"
                         return (
                           <span style={{
