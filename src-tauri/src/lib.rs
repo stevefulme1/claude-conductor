@@ -33,6 +33,11 @@ fn list_sessions() -> Result<Vec<SessionMeta>, String> {
 }
 
 #[tauri::command]
+fn list_sessions_fast() -> Result<Vec<SessionMeta>, String> {
+    sessions::discover_sessions_fast().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn delete_session(file_path: String) -> Result<(), String> {
     let path = Path::new(&file_path)
         .canonicalize()
@@ -459,6 +464,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_sessions,
+            list_sessions_fast,
             delete_session,
             spawn_terminal,
             write_terminal,
