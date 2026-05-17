@@ -7,9 +7,10 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onShowMarketplace?: () => void;
+  onShowPlugins?: () => void;
 }
 
-export default function ConfigPanel({ visible, onClose, onShowMarketplace }: Props) {
+export default function ConfigPanel({ visible, onClose, onShowMarketplace, onShowPlugins }: Props) {
   const [config, setConfig] = useState<ClaudeConfig | null>(null);
   const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
   const [error, setError] = useState<string | null>(null);
@@ -635,6 +636,15 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace }: Pro
               style={{ ...styles.addServerBtn, borderStyle: "solid", color: "var(--text-secondary)", marginTop: 4 }}
             >
               Browse Marketplace
+            </button>
+          )}
+
+          {onShowPlugins && (
+            <button
+              onClick={() => { onClose(); onShowPlugins(); }}
+              style={{ ...styles.addServerBtn, borderStyle: "solid", color: "var(--text-secondary)", marginTop: 4 }}
+            >
+              Manage Plugins
             </button>
           )}
 
