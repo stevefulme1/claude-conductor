@@ -12,6 +12,7 @@ interface Props {
   label: string;
   visible: boolean;
   onStatusChange: (status: "running" | "exited") => void;
+  command?: string;
 }
 
 function stripControl(s: string): string {
@@ -50,7 +51,7 @@ function buildTermTheme() {
   };
 }
 
-export default function Terminal({ session, label, visible, onStatusChange }: Props) {
+export default function Terminal({ session, label, visible, onStatusChange, command = "" }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const onStatusRef = useRef(onStatusChange);
@@ -130,6 +131,7 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
     });
 
     const isNew = !session.file_path;
+    const displayAgent = command || "claude";
 
     async function start() {
       setStatus("running");
@@ -137,11 +139,11 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
 
       if (isNew) {
         term.writeln(
-          `\x1b[38;2;212;132;90m▸ Starting new session in ${session.cwd}\x1b[0m`
+          `\x1b[38;2;212;132;90m▸ Starting ${displayAgent} session in ${session.cwd}\x1b[0m`
         );
       } else {
         term.writeln(
-          `\x1b[38;2;212;132;90m▸ Resuming session in ${session.cwd}\x1b[0m`
+          `\x1b[38;2;212;132;90m▸ Resuming ${displayAgent} session in ${session.cwd}\x1b[0m`
         );
         term.writeln(
           `\x1b[38;2;102;102;102m  ${stripControl(session.first_message)}\x1b[0m`
@@ -189,6 +191,8 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
         }).catch((err) => console.error("write_terminal failed:", err));
       });
 
+      const agentCmd = command || "";
+      const agentName = agentCmd || "claude";
       try {
         await invoke("spawn_terminal", {
           sessionId: session.session_id,
@@ -196,13 +200,14 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
           cwd: session.cwd,
           cols: term.cols,
           rows: term.rows,
+          command: agentCmd,
         });
       } catch (err) {
         if (!mounted) return;
         setStatus("exited");
-        term.writeln(`\x1b[31mFailed to launch claude: ${stripControl(String(err))}\x1b[0m`);
+        term.writeln(`\x1b[31mFailed to launch ${stripControl(agentName)}: ${stripControl(String(err))}\x1b[0m`);
         term.writeln(
-          "\x1b[38;2;102;102;102mMake sure 'claude' is in your PATH.\x1b[0m"
+          `\x1b[38;2;102;102;102mMake sure '${stripControl(agentName)}' is in your PATH.\x1b[0m`
         );
         inputDisposable?.dispose();
         inputDisposable = null;

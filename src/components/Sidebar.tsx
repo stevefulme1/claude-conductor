@@ -25,6 +25,8 @@ interface Props {
   onShowChains?: () => void;
   onShowTemplates?: () => void;
   onShowMarketplace?: () => void;
+  onShowPlugins?: () => void;
+  onShowCompliance?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -64,7 +66,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace, onShowPlugins, onShowCompliance }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -286,6 +288,7 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
         )}
       </div>
 
+      <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} onShowMarketplace={onShowMarketplace} onShowPlugins={onShowPlugins} />
       <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} onShowMarketplace={onShowMarketplace} />
 
       <div style={styles.footer}>

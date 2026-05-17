@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Claude Conductor",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "identifier": "com.claudeconductor.app",
   "build": {
     "frontendDist": "../dist",
@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src http://localhost:* https://localhost:*"
     }
   },
   "bundle": {
@@ -55,6 +55,13 @@
         "depends": ["webkit2gtk4.1", "gtk3"],
         "release": "1"
       }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      },
+      "wix": null
     },
     "category": "DeveloperTool",
     "shortDescription": "Session manager for Claude Code CLI",

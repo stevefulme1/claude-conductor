@@ -22,6 +22,7 @@
     "shell:allow-stdin-write",
     "shell:allow-kill",
     "core:window:allow-start-dragging",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }
