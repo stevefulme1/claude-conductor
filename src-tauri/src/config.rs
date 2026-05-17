@@ -386,7 +386,7 @@ fn check_stdio_server(server: &McpServer) -> McpStatus {
                 }
             }
 
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(500));
 
             if let Err(e) = child.kill() {
                 logs.push(format!("⚠ Could not terminate test process: {e}"));
