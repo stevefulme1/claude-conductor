@@ -1,9 +1,11 @@
 mod config;
 mod digest;
+mod file_tracker;
 mod pty;
 mod sessions;
 mod shell_env;
 mod sso;
+mod worktree;
 
 use sessions::SessionMeta;
 use std::collections::HashMap;
@@ -42,11 +44,12 @@ fn spawn_terminal(
     cwd: String,
     cols: u16,
     rows: u16,
+    command: String,
 ) -> Result<(), String> {
     if !Path::new(&cwd).is_dir() {
         return Err(format!("Directory does not exist: {cwd}"));
     }
-    pty::spawn_pty(app, session_id, claude_session_id, cwd, cols, rows)
+    pty::spawn_pty(app, session_id, claude_session_id, cwd, cols, rows, command)
 }
 
 #[tauri::command]
@@ -140,6 +143,26 @@ fn set_session_label(session_id: String, label: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn create_worktree(repo_path: String, branch_name: String) -> Result<String, String> {
+    worktree::create_worktree(&repo_path, &branch_name)
+}
+
+#[tauri::command]
+fn list_worktrees(repo_path: String) -> Result<Vec<worktree::WorktreeInfo>, String> {
+    worktree::list_worktrees(&repo_path)
+}
+
+#[tauri::command]
+fn remove_worktree(worktree_path: String) -> Result<(), String> {
+    worktree::remove_worktree(&worktree_path)
+}
+
+#[tauri::command]
+fn get_file_changes(cwd: String) -> Result<Vec<file_tracker::FileChange>, String> {
+    file_tracker::get_file_changes(&cwd)
+}
+
+#[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
     let sessions = sessions::discover_sessions()
@@ -218,6 +241,10 @@ pub fn run() {
             cancel_sso,
             get_session_labels,
             set_session_label,
+            create_worktree,
+            list_worktrees,
+            remove_worktree,
+            get_file_changes,
             get_status,
         ])
         .run(tauri::generate_context!())

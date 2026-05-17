@@ -45,3 +45,38 @@ export interface ClaudeConfig {
   model: string;
   config_paths: string[];
 }
+
+export interface AgentPreset {
+  name: string;
+  command: string;
+  args: string[];
+  icon?: string;
+}
+
+export const DEFAULT_AGENT_PRESETS: AgentPreset[] = [
+  { name: "Claude", command: "claude", args: [], icon: "C" },
+  { name: "Codex", command: "codex", args: [], icon: "X" },
+  { name: "Gemini CLI", command: "gemini", args: [], icon: "G" },
+  { name: "Aider", command: "aider", args: [], icon: "A" },
+];
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  head_commit: string;
+  is_prunable: boolean;
+}
+
+export interface FileChange {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "copied";
+  staged: boolean;
+}
+
+export interface PaneNode {
+  type: "split" | "terminal";
+  direction?: "horizontal" | "vertical";
+  children?: [PaneNode, PaneNode];
+  sessionId?: string;
+  splitPercent?: number;
+}

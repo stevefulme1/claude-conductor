@@ -7,8 +7,10 @@ import Terminal from "./components/Terminal";
 import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
 import StatusPanel from "./components/StatusPanel";
+import FileChanges from "./components/FileChanges";
+import SplitPane, { splitPane, removePane, collectSessionIds } from "./components/SplitPane";
 import { useTheme } from "./hooks/useTheme";
-import { SessionMeta } from "./types";
+import { SessionMeta, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
 function startDrag(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 1) {
@@ -26,6 +28,10 @@ export default function App() {
   const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [showStatus, setShowStatus] = useState(false);
+  const [showFileChanges, setShowFileChanges] = useState(false);
+  const [sessionAgents, setSessionAgents] = useState<Record<string, string>>({});
+  const [paneLayout, setPaneLayout] = useState<PaneNode | null>(null);
+  const [sessionWorktrees, setSessionWorktrees] = useState<Record<string, string>>({});
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -49,27 +55,78 @@ export default function App() {
     });
   }, []);
 
-  const handleNewSession = useCallback(async () => {
+  const handleNewSession = useCallback(async (agentCommand?: string) => {
     const selected = await open({ directory: true, multiple: false, title: "Choose project directory" });
     if (typeof selected !== "string") return;
     const id = generateId();
     const dirName = selected.split("/").pop() || selected;
+
+    // Determine the working directory (may be overridden by worktree)
+    let cwd = selected;
+
+    // If user wants a worktree, prompt for branch name
+    const useWorktree = window.confirm("Create a git worktree for this session?");
+    if (useWorktree) {
+      const branchName = window.prompt("Branch name for worktree:", `session/${id.slice(0, 8)}`);
+      if (branchName) {
+        try {
+          const worktreePath = await invoke<string>("create_worktree", {
+            repoPath: selected,
+            branchName,
+          });
+          cwd = worktreePath;
+          setSessionWorktrees(prev => ({ ...prev, [id]: worktreePath }));
+        } catch (err) {
+          console.warn("Failed to create worktree:", err);
+          // Fall back to original directory
+        }
+      }
+    }
+
     const session: SessionMeta = {
       session_id: id,
       project_path: selected,
       project_display: dirName,
       last_modified: new Date().toISOString(),
       first_message: "New session",
-      cwd: selected,
+      cwd,
       message_count: 0,
       file_path: "",
     };
+    if (agentCommand) {
+      setSessionAgents(prev => ({ ...prev, [id]: agentCommand }));
+    }
     setOpenedSessions(prev => [...prev, session]);
     setActiveSessionId(id);
   }, []);
 
   const closeSession = useCallback((sessionId: string) => {
     invoke("kill_terminal", { sessionId }).catch(() => {});
+
+    // Handle worktree cleanup
+    const worktreePath = sessionWorktrees[sessionId];
+    if (worktreePath) {
+      const keepWorktree = window.confirm(
+        `Session has a worktree at:\n${worktreePath}\n\nKeep worktree? (Cancel to remove it)`
+      );
+      if (!keepWorktree) {
+        invoke("remove_worktree", { worktreePath }).catch((err) =>
+          console.warn("Failed to remove worktree:", err)
+        );
+      }
+      setSessionWorktrees(prev => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+    }
+
+    // Remove from pane layout if present
+    setPaneLayout(prev => {
+      if (!prev) return null;
+      return removePane(prev, sessionId);
+    });
+
     setOpenedSessions(prev => {
       const next = prev.filter(s => s.session_id !== sessionId);
       setActiveSessionId(curr => {
@@ -80,7 +137,7 @@ export default function App() {
       });
       return next;
     });
-  }, []);
+  }, [sessionWorktrees]);
 
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
     setOpenedSessions(prev => {
@@ -99,9 +156,51 @@ export default function App() {
     }
   }, []);
 
+  const handleSplit = useCallback((direction: "horizontal" | "vertical") => {
+    const currentId = activeRef.current;
+    if (!currentId) return;
+    const currentSession = openedRef.current.find(s => s.session_id === currentId);
+    if (!currentSession) return;
+
+    const newId = generateId();
+    const newSession: SessionMeta = {
+      session_id: newId,
+      project_path: currentSession.project_path,
+      project_display: currentSession.project_display,
+      last_modified: new Date().toISOString(),
+      first_message: "Split session",
+      cwd: currentSession.cwd,
+      message_count: 0,
+      file_path: "",
+    };
+
+    // Copy agent setting from the source session
+    const sourceAgent = sessionAgents[currentId];
+    if (sourceAgent) {
+      setSessionAgents(prev => ({ ...prev, [newId]: sourceAgent }));
+    }
+
+    setOpenedSessions(prev => [...prev, newSession]);
+
+    setPaneLayout(prev => {
+      const currentPane: PaneNode = prev || { type: "terminal", sessionId: currentId };
+      return splitPane(currentPane, newId, direction);
+    });
+  }, [sessionAgents]);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key === "d" && !e.shiftKey) {
+        e.preventDefault();
+        handleSplit("horizontal");
+        return;
+      }
+      if (meta && e.key === "d" && e.shiftKey) {
+        e.preventDefault();
+        handleSplit("vertical");
+        return;
+      }
       if (meta && e.key === "n") {
         e.preventDefault();
         handleNewSession();
@@ -135,7 +234,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleNewSession, closeSession]);
+  }, [handleNewSession, closeSession, handleSplit]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -179,19 +278,70 @@ export default function App() {
           sessions={openedSessions}
           activeSessionId={activeSessionId}
           labels={labels}
+          sessionAgents={sessionAgents}
+          sessionWorktrees={sessionWorktrees}
           onSelect={setActiveSessionId}
           onClose={closeSession}
           onReorder={handleReorder}
         />
-        {openedSessions.map(session => (
-          <Terminal
-            key={session.session_id}
-            session={session}
-            label={labels[session.session_id] || ""}
-            visible={session.session_id === activeSessionId}
-            onStatusChange={(status) => handleStatusChange(session.session_id, status)}
+        {paneLayout ? (
+          <SplitPane
+            node={paneLayout}
+            renderTerminal={(sessionId) => {
+              const session = openedSessions.find(s => s.session_id === sessionId);
+              if (!session) return null;
+              return (
+                <Terminal
+                  key={session.session_id}
+                  session={session}
+                  label={labels[session.session_id] || ""}
+                  visible={true}
+                  command={sessionAgents[session.session_id] || ""}
+                  onStatusChange={(status) => handleStatusChange(session.session_id, status)}
+                />
+              );
+            }}
+            onClosePane={closeSession}
           />
-        ))}
+        ) : (
+          openedSessions.map(session => (
+            <Terminal
+              key={session.session_id}
+              session={session}
+              label={labels[session.session_id] || ""}
+              visible={session.session_id === activeSessionId}
+              command={sessionAgents[session.session_id] || ""}
+              onStatusChange={(status) => handleStatusChange(session.session_id, status)}
+            />
+          ))
+        )}
+        {activeSession && (
+          <div style={{ flexShrink: 0 }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              padding: "2px 8px",
+              background: "var(--bg-secondary)",
+              borderTop: "1px solid var(--border-subtle)",
+            }}>
+              <button
+                onClick={() => setShowFileChanges(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showFileChanges ? "var(--accent)" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+              >
+                {showFileChanges ? "Hide Changes" : "Show Changes"}
+              </button>
+            </div>
+            <FileChanges cwd={activeSession.cwd} visible={showFileChanges} />
+          </div>
+        )}
         {!activeSessionId && openedSessions.length === 0 && <EmptyState />}
       </main>
       <StatusPanel

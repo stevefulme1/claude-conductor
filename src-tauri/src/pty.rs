@@ -60,6 +60,7 @@ pub fn spawn_pty(
     cwd: String,
     cols: u16,
     rows: u16,
+    command: String,
 ) -> Result<(), String> {
     validate_size(cols, rows)?;
 
@@ -75,14 +76,30 @@ pub fn spawn_pty(
 
     let shell_env = get_shell_env();
 
-    let claude_path = crate::shell_env::resolve_executable("claude", &shell_env)
-        .ok_or_else(|| "Failed to launch claude: 'claude' not found in PATH. Install it with: npm install -g @anthropic-ai/claude-code".to_string())?;
+    let is_claude = command.is_empty() || command == "claude";
 
-    let mut cmd = CommandBuilder::new(claude_path);
-    if !claude_session_id.is_empty() {
-        cmd.arg("--resume");
-        cmd.arg(&claude_session_id);
-    }
+    let cmd = if is_claude {
+        let claude_path = crate::shell_env::resolve_executable("claude", &shell_env)
+            .ok_or_else(|| "Failed to launch claude: 'claude' not found in PATH. Install it with: npm install -g @anthropic-ai/claude-code".to_string())?;
+        let mut c = CommandBuilder::new(claude_path);
+        if !claude_session_id.is_empty() {
+            c.arg("--resume");
+            c.arg(&claude_session_id);
+        }
+        c
+    } else {
+        // Parse command string: first token is executable, rest are args
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        let exec_name = parts.first().ok_or("Empty command")?;
+        let exec_path = crate::shell_env::resolve_executable(exec_name, &shell_env)
+            .ok_or_else(|| format!("Command '{}' not found in PATH", exec_name))?;
+        let mut c = CommandBuilder::new(exec_path);
+        for arg in parts.iter().skip(1) {
+            c.arg(arg);
+        }
+        c
+    };
+    let mut cmd = cmd;
     cmd.cwd(&cwd);
 
     for (key, value) in &shell_env {

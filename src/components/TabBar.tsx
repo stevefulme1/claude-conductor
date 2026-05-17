@@ -5,6 +5,8 @@ interface Props {
   sessions: SessionMeta[];
   activeSessionId: string | null;
   labels: Record<string, string>;
+  sessionAgents?: Record<string, string>;
+  sessionWorktrees?: Record<string, string>;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -15,7 +17,7 @@ function shortenPath(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-export default function TabBar({ sessions, activeSessionId, labels, onSelect, onClose, onReorder }: Props) {
+export default function TabBar({ sessions, activeSessionId, labels, sessionAgents = {}, sessionWorktrees = {}, onSelect, onClose, onReorder }: Props) {
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -69,7 +71,10 @@ export default function TabBar({ sessions, activeSessionId, labels, onSelect, on
         {displaySessions.map((s, i) => {
           const realIndex = sessions.indexOf(s);
           const isActive = s.session_id === activeSessionId;
-          const displayName = labels[s.session_id] || shortenPath(s.cwd);
+          const agent = sessionAgents[s.session_id];
+          const hasWorktree = !!sessionWorktrees[s.session_id];
+          const agentPrefix = agent && agent !== "claude" ? `[${agent}] ` : "";
+          const displayName = agentPrefix + (labels[s.session_id] || shortenPath(s.cwd));
           const isDragging = dragIndex === realIndex;
           const isDragOver = dragOverIndex === realIndex && dragIndex !== realIndex;
           return (
@@ -88,6 +93,7 @@ export default function TabBar({ sessions, activeSessionId, labels, onSelect, on
                 ...(isDragOver ? { borderLeftColor: "var(--accent)" } : {}),
               }}
             >
+              {hasWorktree && <span style={styles.worktreeIcon} title="Git worktree">⑂</span>}
               <span style={styles.tabLabel}>{displayName}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(s.session_id); }}
@@ -181,6 +187,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     display: "flex",
     alignItems: "center",
+  },
+  worktreeIcon: {
+    fontSize: 12,
+    color: "var(--accent)",
+    flexShrink: 0,
+    lineHeight: 1,
   },
   searchArea: {
     display: "flex",
