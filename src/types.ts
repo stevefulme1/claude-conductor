@@ -46,6 +46,21 @@ export interface ClaudeConfig {
   config_paths: string[];
 }
 
+// Smart MCP Auth
+export interface AuthInfo {
+  auth_type: "token" | "oauth" | "none";
+  has_token: boolean;
+  token_valid: boolean;
+  provider: string;
+  oauth_url: string | null;
+}
+
+export interface TokenStatus {
+  valid: boolean;
+  message: string;
+  expires_at: string | null;
+}
+
 export interface AgentPreset {
   name: string;
   command: string;
