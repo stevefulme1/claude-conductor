@@ -87,7 +87,7 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
       const result = await invoke<SessionMeta[]>("list_sessions_fast");
       setSessions(result);
       setError(null);
-      loadSessionsFull();
+      setTimeout(loadSessionsFull, 2000);
     } catch (e) {
       console.error("Failed to load sessions:", e);
       setError(`Failed to load sessions: ${e}`);
