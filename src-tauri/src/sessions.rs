@@ -7,8 +7,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::SystemTime;
 
-const MAX_SESSIONS: usize = 500;
-const MAX_LINES: usize = 200;
+const MAX_SESSIONS: usize = 200;
+const MAX_LINES: usize = 50;
 const MAX_CONSECUTIVE_FAILURES: usize = 10;
 
 struct CachedEntry {
@@ -315,6 +315,12 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
                 full_path: file.path(),
             });
         }
+    }
+
+    // Sort by modification time (newest first) and limit to most recent entries
+    file_entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+    if file_entries.len() > MAX_SESSIONS {
+        file_entries.truncate(MAX_SESSIONS);
     }
 
     // Phase 2: Lock the cache briefly to merge results

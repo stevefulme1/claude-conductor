@@ -385,6 +385,14 @@ export default function App() {
         onShowTemplates={() => setShowTemplates(true)}
         onShowMarketplace={() => setShowMarketplace(true)}
         onShowHelp={() => setShowHelp(true)}
+        onLabelChange={(sessionId, label) => {
+          setLabels((prev) => {
+            const next = { ...prev };
+            if (label) next[sessionId] = label;
+            else delete next[sessionId];
+            return next;
+          });
+        }}
       />
       <main
         style={{

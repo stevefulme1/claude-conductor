@@ -28,6 +28,7 @@ interface Props {
   onShowPlugins?: () => void;
   onShowCompliance?: () => void;
   onShowHelp?: () => void;
+  onLabelChange?: (sessionId: string, label: string) => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -67,7 +68,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace, onShowPlugins, onShowCompliance, onShowHelp }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace, onShowPlugins, onShowCompliance, onShowHelp, onLabelChange }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -127,6 +128,7 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
         } else {
           delete next[sessionId];
         }
+        onLabelChange?.(sessionId, label.trim());
         return next;
       });
     } catch (e) {
