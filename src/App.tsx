@@ -363,10 +363,10 @@ export default function App() {
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (_e) => {
-      // Kill all running PTYs on close — no blocking confirmation
-      for (const sid of runningSessions.current) {
+      // Fire-and-forget PTY cleanup — don't await, don't block close
+      runningSessions.current.forEach((sid) => {
         invoke("kill_terminal", { sessionId: sid }).catch(() => {});
-      }
+      });
     });
     return () => { unlisten.then(fn => fn()); };
   }, []);
@@ -410,7 +410,6 @@ export default function App() {
           overflow: "hidden",
         }}
       >
-        <div onMouseDown={startDrag} style={{ height: 52, flexShrink: 0, cursor: "default" }} />
         <TabBar
           sessions={openedSessions}
           activeSessionId={activeSessionId}
