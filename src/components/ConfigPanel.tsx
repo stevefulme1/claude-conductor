@@ -465,28 +465,17 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                                 >
                                   Login with {authInfo.provider}
                                 </button>
-                              ) : (
+                              ) : server.command_or_url ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (ssoEditing === server.name) {
-                                      setSsoEditing(null);
-                                    } else {
-                                      setSsoEditing(server.name);
-                                      setSsoAuthUrl("");
-                                      setSsoTokenUrl("");
-                                      setSsoClientId("");
-                                      setSsoScopes("");
-                                    }
-                                    setAuthEditing(null);
+                                    openOAuthUrl(server.name, server.command_or_url);
                                   }}
                                   style={styles.ssoBtn}
                                 >
-                                  {ssoEditing === server.name
-                                    ? "Cancel"
-                                    : `Login with ${authInfo.provider}`}
+                                  Open {authInfo.provider} in Browser
                                 </button>
-                              )}
+                              ) : null}
                             </>
                           );
                         }
@@ -504,42 +493,16 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                       })()}
 
                       {/* Fallback auth buttons when auth info not yet loaded */}
-                      {!authInfoMap[server.name] && server.server_type === "http" && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAuthEditing(
-                                isEditingAuth ? null : server.name
-                              );
-                              setAuthToken("");
-                              setSsoEditing(null);
-                            }}
-                            style={styles.actionBtn}
-                          >
-                            {isEditingAuth ? "Cancel" : "Update Auth"}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (ssoEditing === server.name) {
-                                setSsoEditing(null);
-                              } else {
-                                setSsoEditing(server.name);
-                                setSsoAuthUrl("");
-                                setSsoTokenUrl("");
-                                setSsoClientId("");
-                                setSsoScopes("");
-                              }
-                              setAuthEditing(null);
-                            }}
-                            style={styles.ssoBtn}
-                          >
-                            {ssoEditing === server.name
-                              ? "Cancel SSO"
-                              : "SSO Login"}
-                          </button>
-                        </>
+                      {!authInfoMap[server.name] && server.server_type === "http" && server.command_or_url && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openOAuthUrl(server.name, server.command_or_url);
+                          }}
+                          style={styles.ssoBtn}
+                        >
+                          Open in Browser
+                        </button>
                       )}
 
                       {server.has_env && (
@@ -680,103 +643,6 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                       </div>
                     )}
 
-                    {ssoEditing === server.name && (
-                      <div style={styles.authForm}>
-                        {ssoInProgress === server.name ? (
-                          <div style={styles.ssoWaiting}>
-                            <div style={styles.ssoSpinner} />
-                            <span style={styles.ssoWaitText}>
-                              Waiting for browser login...
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                cancelSso();
-                              }}
-                              style={styles.ssoCancelBtn}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div style={styles.formLabel}>
-                              OAuth2 / SSO Configuration
-                            </div>
-                            <div style={styles.ssoField}>
-                              <label style={styles.ssoFieldLabel}>
-                                Authorization URL
-                              </label>
-                              <input
-                                value={ssoAuthUrl}
-                                onChange={(e) =>
-                                  setSsoAuthUrl(e.target.value)
-                                }
-                                placeholder="https://idp.example.com/authorize"
-                                style={styles.formInput}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                            <div style={styles.ssoField}>
-                              <label style={styles.ssoFieldLabel}>
-                                Token URL
-                              </label>
-                              <input
-                                value={ssoTokenUrl}
-                                onChange={(e) =>
-                                  setSsoTokenUrl(e.target.value)
-                                }
-                                placeholder="https://idp.example.com/token"
-                                style={styles.formInput}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                            <div style={styles.ssoField}>
-                              <label style={styles.ssoFieldLabel}>
-                                Client ID
-                              </label>
-                              <input
-                                value={ssoClientId}
-                                onChange={(e) =>
-                                  setSsoClientId(e.target.value)
-                                }
-                                placeholder="my-app-client-id"
-                                style={styles.formInput}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                            <div style={styles.ssoField}>
-                              <label style={styles.ssoFieldLabel}>
-                                Scopes
-                              </label>
-                              <input
-                                value={ssoScopes}
-                                onChange={(e) =>
-                                  setSsoScopes(e.target.value)
-                                }
-                                placeholder="openid profile (default: openid)"
-                                style={styles.formInput}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startSso(server.name);
-                              }}
-                              disabled={
-                                !ssoAuthUrl.trim() ||
-                                !ssoTokenUrl.trim() ||
-                                !ssoClientId.trim()
-                              }
-                              style={styles.saveBtn}
-                            >
-                              Authenticate with SSO
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
 
                     {status && status.logs.length > 0 && (
                       <div style={styles.logSection}>

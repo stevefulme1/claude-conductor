@@ -62,6 +62,13 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
     }
   }
 
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visible, onClose]);
+
   if (!visible) return null;
 
   return (
