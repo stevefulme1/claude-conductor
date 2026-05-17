@@ -6,9 +6,10 @@ import { McpServer, McpStatus, ClaudeConfig } from "../types";
 interface Props {
   visible: boolean;
   onClose: () => void;
+  onShowMarketplace?: () => void;
 }
 
-export default function ConfigPanel({ visible, onClose }: Props) {
+export default function ConfigPanel({ visible, onClose, onShowMarketplace }: Props) {
   const [config, setConfig] = useState<ClaudeConfig | null>(null);
   const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
   const [error, setError] = useState<string | null>(null);
@@ -627,6 +628,15 @@ export default function ConfigPanel({ visible, onClose }: Props) {
           >
             {showAddForm ? "Cancel" : "+ Add MCP Server"}
           </button>
+
+          {onShowMarketplace && (
+            <button
+              onClick={() => { onClose(); onShowMarketplace(); }}
+              style={{ ...styles.addServerBtn, borderStyle: "solid", color: "var(--text-secondary)", marginTop: 4 }}
+            >
+              Browse Marketplace
+            </button>
+          )}
 
           {showAddForm && (
             <div style={styles.addForm}>

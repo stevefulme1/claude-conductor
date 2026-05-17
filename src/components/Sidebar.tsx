@@ -19,6 +19,12 @@ interface Props {
   theme: "system" | "light" | "dark";
   onThemeChange: (theme: "system" | "light" | "dark") => void;
   onShowStatus?: () => void;
+  onToggleKanban?: () => void;
+  showKanban?: boolean;
+  onShowProfiles?: () => void;
+  onShowChains?: () => void;
+  onShowTemplates?: () => void;
+  onShowMarketplace?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -58,7 +64,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -280,7 +286,7 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
         )}
       </div>
 
-      <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} />
+      <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} onShowMarketplace={onShowMarketplace} />
 
       <div style={styles.footer}>
         <div style={styles.footerRow}>
@@ -313,6 +319,49 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
               ) : (
                 <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /><path d="M16 12a4 4 0 0 1-4 4V8a4 4 0 0 1 4 4z" fill="currentColor" /></>
               )}
+            </svg>
+          </button>
+          <button
+            onClick={() => onToggleKanban?.()}
+            style={{ ...styles.settingsBtn, color: showKanban ? "var(--accent)" : "var(--text-tertiary)" }}
+            title="Kanban Board"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="5" height="18" rx="1" />
+              <rect x="10" y="3" width="5" height="12" rx="1" />
+              <rect x="17" y="3" width="5" height="15" rx="1" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onShowProfiles?.()}
+            style={styles.settingsBtn}
+            title="Agent Profiles"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onShowChains?.()}
+            style={styles.settingsBtn}
+            title="Session Chains (Cmd+Shift+C)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onShowTemplates?.()}
+            style={styles.settingsBtn}
+            title="Templates (Cmd+Shift+T)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
             </svg>
           </button>
           <button
