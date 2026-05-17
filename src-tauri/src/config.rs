@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -64,12 +64,17 @@ fn settings_path() -> PathBuf {
 }
 
 fn write_config_file(path: &PathBuf, content: &str) -> Result<(), Box<dyn std::error::Error>> {
-    fs::write(path, content)?;
+    // Atomic write: write to temp file with restricted permissions, then rename
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp_path = dir.join(format!(".{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
+
+    fs::write(&tmp_path, content)?;
     #[cfg(unix)]
     {
         let perms = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(path, perms)?;
+        fs::set_permissions(&tmp_path, perms)?;
     }
+    fs::rename(&tmp_path, path)?;
     Ok(())
 }
 

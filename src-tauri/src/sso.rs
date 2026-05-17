@@ -186,7 +186,7 @@ pub fn start_sso_flow(
 
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    let mut buf = [0u8; 4096];
+                    let mut buf = [0u8; 16384];
                     let n = match stream.read(&mut buf) {
                         Ok(n) => n,
                         Err(e) => {

@@ -106,14 +106,15 @@ jobs:
 
       - name: Install Rust
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          dnf install -y rustup 2>/dev/null || (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal)
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rustup default stable
 
       - run: npm ci
 
       - name: Build Tauri app
         run: |
-          source "$HOME/.cargo/env"
+          export PATH="$HOME/.cargo/bin:$PATH"
           npx tauri build --bundles rpm
 
       - name: Upload RPM

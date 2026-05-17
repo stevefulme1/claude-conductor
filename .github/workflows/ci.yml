@@ -68,7 +68,7 @@ jobs:
       - name: Security audit
         working-directory: src-tauri
         run: |
-          cargo install cargo-audit --quiet
+          cargo install --locked cargo-audit --quiet 2>/dev/null || true
           cargo audit
 
   build:

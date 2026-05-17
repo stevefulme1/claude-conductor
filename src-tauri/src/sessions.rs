@@ -168,10 +168,17 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
         return Ok(vec![]);
     }
 
-    let mut guard = SESSION_CACHE.lock();
-    let cache = guard.get_or_insert_with(HashMap::new);
-    let mut seen_keys = HashSet::new();
-    let mut results = vec![];
+    // Phase 1: Scan filesystem WITHOUT holding the lock
+    struct FileEntry {
+        file_path: String,
+        modified: std::time::SystemTime,
+        session_id: String,
+        project_name: String,
+        display: String,
+        full_path: std::path::PathBuf,
+    }
+
+    let mut file_entries = Vec::new();
 
     for project_entry in fs::read_dir(projects_dir)? {
         let project_entry = match project_entry {
@@ -222,37 +229,70 @@ fn discover_sessions_from(projects_dir: &Path) -> Result<Vec<SessionMeta>, Box<d
                 Err(_) => continue,
             };
 
-            seen_keys.insert(file_path_str.clone());
-
-            if let Some(cached) = cache.get(&file_path_str) {
-                if cached.mtime == modified {
-                    results.push(cached.meta.clone());
-                    continue;
-                }
-            }
-
-            let session_id = fname.trim_end_matches(".jsonl").to_string();
-            let dt: DateTime<Utc> = modified.into();
-            let (first_message, cwd, message_count) = extract_session_summary(&file.path());
-
-            let meta = SessionMeta {
-                session_id,
-                project_path: project_name.clone(),
-                project_display: display.clone(),
-                last_modified: dt.to_rfc3339(),
-                first_message,
-                cwd: if cwd.is_empty() {
-                    format!("/{}", display)
-                } else {
-                    cwd
-                },
-                message_count,
-                file_path: file_path_str.clone(),
-            };
-
-            cache.insert(file_path_str, CachedEntry { mtime: modified, meta: meta.clone() });
-            results.push(meta);
+            file_entries.push(FileEntry {
+                file_path: file_path_str,
+                modified,
+                session_id: fname.trim_end_matches(".jsonl").to_string(),
+                project_name: project_name.clone(),
+                display: display.clone(),
+                full_path: file.path(),
+            });
         }
+    }
+
+    // Phase 2: Lock the cache briefly to merge results
+    let mut guard = SESSION_CACHE.lock();
+    let cache = guard.get_or_insert_with(HashMap::new);
+    let mut seen_keys = HashSet::new();
+    let mut results = vec![];
+    let mut uncached = vec![];
+
+    for entry in &file_entries {
+        seen_keys.insert(entry.file_path.clone());
+
+        if let Some(cached) = cache.get(&entry.file_path) {
+            if cached.mtime == entry.modified {
+                results.push(cached.meta.clone());
+                continue;
+            }
+        }
+        uncached.push(entry);
+    }
+
+    // Drop the lock before parsing uncached files
+    drop(guard);
+
+    // Phase 3: Parse uncached files without holding the lock
+    let mut new_entries = vec![];
+    for entry in uncached {
+        let dt: DateTime<Utc> = entry.modified.into();
+        let (first_message, cwd, message_count) = extract_session_summary(&entry.full_path);
+
+        let meta = SessionMeta {
+            session_id: entry.session_id.clone(),
+            project_path: entry.project_name.clone(),
+            project_display: entry.display.clone(),
+            last_modified: dt.to_rfc3339(),
+            first_message,
+            cwd: if cwd.is_empty() {
+                format!("/{}", entry.display)
+            } else {
+                cwd
+            },
+            message_count,
+            file_path: entry.file_path.clone(),
+        };
+
+        new_entries.push((entry.file_path.clone(), entry.modified, meta));
+    }
+
+    // Phase 4: Lock briefly to insert new entries
+    let mut guard = SESSION_CACHE.lock();
+    let cache = guard.get_or_insert_with(HashMap::new);
+
+    for (path, mtime, meta) in new_entries {
+        results.push(meta.clone());
+        cache.insert(path, CachedEntry { mtime, meta });
     }
 
     cache.retain(|k, _| seen_keys.contains(k));
