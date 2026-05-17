@@ -2,6 +2,47 @@
 
 All notable changes to Claude Conductor are documented in this file.
 
+## [1.0.0] - 2026-05-17
+
+### Added — 23 New Features
+
+**Session Management**
+- Git worktree isolation per session (sibling `../repo-worktrees/` pattern)
+- Split panes — vertical (Cmd+D) and horizontal (Cmd+Shift+D) with drag-to-resize
+- Multi-agent support — presets for Claude, Codex, Gemini CLI, Aider, and custom agents
+- File change tracking per session with auto-refresh (git diff)
+- Inline diff viewer with color-coded unified diffs
+- Desktop notifications when sessions complete
+- Usage analytics with token counts and cost estimation per session
+- Timeline/checkpoint system via git tags (create/list/restore)
+- Session status kanban board (Planning → Running → Review → Done)
+- Custom agent profiles with save/edit/delete
+- Embedded browser preview with dev server auto-detection (Cmd+Shift+B)
+- Code search with symbol detection (Cmd+Shift+F)
+- Git log visualization with ASCII graph (Cmd+Shift+G)
+- Session export to Markdown and self-contained HTML
+- Session cost calculator with daily aggregation and per-model breakdown
+- Agent handoff / session chaining for multi-step pipelines (Cmd+Shift+C)
+- Session templates with defaults (Code Review, Implement Feature, Research) (Cmd+Shift+T)
+- MCP server marketplace with one-click install (12 popular servers)
+- Session replay with play/pause/step and speed controls
+- Compliance mode with audit log and exportable reports
+- Smart session routing — auto-detect project type and suggest best agent
+- Performance benchmarks dashboard (avg duration, tokens, cost, success rate)
+- Plugin system infrastructure with manifest discovery
+- Voice input via Web Speech API (Cmd+Shift+V)
+- Spatial canvas — 2D infinite canvas layout for sessions (Cmd+Shift+Space)
+- CI monitor — GitHub Actions status, failure logs, and re-run from status bar
+- Help menu with searchable feature guide, keyboard shortcuts, and update checker (Cmd+?)
+
+**Infrastructure**
+- Windows NSIS installer configuration
+- Updated CSP for browser preview iframe support
+- Version bump to 1.0.0
+
+### Changed
+- Sidebar footer buttons now wrap properly with reduced padding for better layout at all sizes
+
 ## [0.5.0] - 2026-05-17
 
 ### Added

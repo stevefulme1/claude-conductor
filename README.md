@@ -1,27 +1,96 @@
 # Claude Conductor
 
-A desktop session manager for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Discover, search, and resume your CLI sessions from a native app with integrated terminal emulation.
+A desktop session manager for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other AI coding agents. Discover, search, resume, and orchestrate CLI sessions from a native app with integrated terminal emulation, git worktree isolation, split panes, cost tracking, and 20+ productivity features.
 
 ## Features
 
+### Session Management
 - **Session discovery** — automatically finds sessions from `~/.claude/projects/`
-- **Search and filter** — search by message content, project path, or working directory
-- **Time-grouped sidebar** — sessions organized by Today, Yesterday, This Week, This Month, Older
-- **Native terminal** — PTY-based terminal emulation via xterm.js with full color and input support
-- **One-click resume** — select a session and pick up where you left off
-- **Tab bar** — switch between multiple open sessions with keyboard shortcuts (Cmd+1-9, Cmd+[/])
-- **Dark/light mode** — theme toggle with system preference detection, applies to terminal and UI
-- **Status panel** — live view of active PTYs, open tabs, discovered sessions, and MCP server health
-- **Session naming** — custom labels that persist across restarts
-- **MCP server management** — add, configure, and monitor MCP servers with OAuth2 SSO support
-- **Optimized PTY** — batched output (16ms coalescing), paused background terminals, 4MB buffer cap
+- **Search and filter** — full-text search by message content, project path, or working directory
+- **Time-grouped sidebar** — organized by Today, Yesterday, This Week, This Month, Older
+- **Session labels** — custom names that persist across restarts
+- **Session templates** — pre-configured profiles for Code Review, Implement Feature, Research (Cmd+Shift+T)
+- **Session chaining** — multi-step agent pipelines: Research → Code → Test (Cmd+Shift+C)
+- **Session replay** — playback completed sessions step-by-step with speed controls
+- **Session export** — export as Markdown or self-contained HTML for sharing
 
-## Prerequisites
+### Terminal
+- **Multi-tab** — switch between sessions with keyboard shortcuts (Cmd+1-9, Cmd+[/])
+- **Split panes** — vertical (Cmd+D) and horizontal (Cmd+Shift+D) splits with drag-to-resize
+- **Multi-agent** — switch between Claude, Codex, Gemini CLI, Aider, or custom agents
+- **Voice input** — dictate to terminal via Web Speech API (Cmd+Shift+V)
+- **Pause/resume** — pause terminal output buffering without killing the process (4MB buffer cap)
+- **Optimized PTY** — batched output (16ms coalescing), UTF-8 boundary detection
+
+### Git Integration
+- **Git worktrees** — isolate sessions in separate worktrees (sibling directory pattern)
+- **File change tracking** — see what files changed per session with auto-refresh
+- **Inline diff viewer** — click any changed file to see the unified diff
+- **Checkpoints** — create and restore named checkpoints via git tags
+- **Git graph** — visualize git log with ASCII graph (Cmd+Shift+G)
+
+### Analytics & Monitoring
+- **Usage analytics** — token counts and estimated cost per session
+- **Daily cost calculator** — aggregate cost across all sessions with per-model breakdown
+- **Performance benchmarks** — average duration, tokens, cost, sessions/day, success rate
+- **CI monitor** — GitHub Actions status in status bar with logs and re-run
+- **Desktop notifications** — alerts when sessions complete (when app is unfocused)
+
+### Agent Management
+- **Agent presets** — built-in for Claude, Codex, Gemini, Aider
+- **Custom profiles** — save your own agent configurations
+- **Smart routing** — auto-detect project type and suggest the best agent
+- **MCP dashboard** — manage MCP servers with real-time health checks
+- **MCP marketplace** — browse and one-click install from 12 popular servers
+- **SSO/OAuth** — PKCE-based authentication for MCP servers
+
+### Collaboration & Governance
+- **Compliance mode** — audit log of all agent actions with exportable reports
+- **Kanban board** — track session status (Planning → Running → Review → Done)
+
+### Advanced
+- **Spatial canvas** — 2D infinite canvas layout for sessions (Cmd+Shift+Space)
+- **Browser preview** — embedded iframe with dev server auto-detection (Cmd+Shift+B)
+- **Code search** — search code with symbol detection (Cmd+Shift+F)
+- **Plugin system** — extensible plugin architecture with manifest discovery
+- **Help menu** — searchable feature guide, keyboard shortcuts, update checker (Cmd+?)
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+N | New session |
+| Cmd+W | Close tab |
+| Cmd+[ / ] | Previous / Next tab |
+| Cmd+1-9 | Jump to tab |
+| Cmd+D | Split vertical |
+| Cmd+Shift+D | Split horizontal |
+| Cmd+Shift+F | Code search |
+| Cmd+Shift+G | Git graph |
+| Cmd+Shift+V | Voice input |
+| Cmd+Shift+B | Browser preview |
+| Cmd+Shift+C | Session chains |
+| Cmd+Shift+T | Session templates |
+| Cmd+Shift+Space | Spatial canvas |
+| Cmd+? | Help menu |
+
+## Install
+
+### macOS
+Download the `.dmg` from [Releases](https://github.com/stevefulme1/claude-conductor/releases) or build from source.
+
+### Linux
+Download the `.deb` or `.rpm` from [Releases](https://github.com/stevefulme1/claude-conductor/releases).
+
+### Windows
+Download the `.exe` installer from [Releases](https://github.com/stevefulme1/claude-conductor/releases).
+
+## Prerequisites (Development)
 
 - [Node.js](https://nodejs.org/) 22+
 - [Rust](https://www.rust-lang.org/tools/install) 1.77+
 - [Tauri CLI v2](https://tauri.app/start/): `npm install -g @tauri-apps/cli`
-- `claude` CLI in your PATH
+- `claude` CLI in your PATH (for Claude sessions)
 
 ### Linux additional dependencies
 
@@ -47,75 +116,33 @@ Production binaries are output to `src-tauri/target/release/bundle/`.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│  React + xterm.js (src/)                         │
-│  Sidebar, TabBar, Terminal, StatusPanel,          │
-│  ConfigPanel, SessionCard, EmptyState             │
-├──────────────────────────────────────────────────┤
-│  Tauri IPC (commands + events)                   │
-│  spawn/write/resize/kill/pause/resume terminal   │
-│  get_status, verify_mcp, list_sessions           │
-├──────────────────────────────────────────────────┤
-│  Rust backend (src-tauri/src/)                   │
-│  pty.rs — PTY lifecycle + output batching        │
-│  sessions.rs — session discovery + caching       │
-│  config.rs — MCP/settings with atomic writes     │
-│  sso.rs — OAuth2 SSO authentication              │
-│  lib.rs — command dispatch + status reporting    │
-└──────────────────────────────────────────────────┘
-```
-
-**Rust backend** manages PTY sessions (spawn, write, resize, kill, pause, resume) with 16ms output batching, discovers Claude Code session files from `~/.claude/projects/`, and provides status reporting and MCP server health checks.
-
-**React frontend** renders a searchable sidebar, tab bar for multi-session switching, xterm.js terminal with theme support, status panel with live metrics, and MCP configuration panel.
-
-## Project structure
-
-```
-claude-conductor/
-├── src/                    # React frontend
-│   ├── components/
-│   │   ├── ConfigPanel.tsx # MCP server settings
-│   │   ├── EmptyState.tsx  # Placeholder when no session selected
-│   │   ├── ErrorBoundary.tsx # Crash recovery
-│   │   ├── SessionCard.tsx # Individual session in sidebar
-│   │   ├── Sidebar.tsx     # Session list with search
-│   │   ├── StatusPanel.tsx # Live status dashboard
-│   │   ├── TabBar.tsx      # Multi-session tab switching
-│   │   └── Terminal.tsx    # xterm.js terminal with theme support
-│   ├── hooks/
-│   │   └── useTheme.ts    # Dark/light/system theme management
-│   ├── __tests__/          # Vitest component tests
-│   ├── styles/global.css   # CSS custom properties (dark + light)
-│   ├── types.ts            # TypeScript interfaces
-│   ├── App.tsx             # Layout container
-│   └── main.tsx            # Entry point
-├── src-tauri/
-│   └── src/
-│       ├── config.rs       # MCP/settings with atomic writes
-│       ├── digest.rs       # 30-day session digest generator
-│       ├── lib.rs          # Tauri command handlers + status
-│       ├── main.rs         # Entry point
-│       ├── pty.rs          # PTY management with output batching
-│       ├── sessions.rs     # Session discovery + mtime cache
-│       ├── shell_env.rs    # Shell environment propagation
-│       └── sso.rs          # OAuth2 SSO authentication
-├── vitest.config.ts
-├── vite.config.ts
-└── package.json
+┌────────────────────────────────────────────────────────┐
+│  React 19 + xterm.js 6 (src/)                         │
+│  28 components: Sidebar, Terminal, SplitPane,          │
+│  FileChanges, DiffViewer, KanbanBoard, HelpMenu, ...   │
+├────────────────────────────────────────────────────────┤
+│  Tauri 2.11 IPC (commands + events)                    │
+│  40+ commands for PTY, git, analytics, config, CI      │
+├────────────────────────────────────────────────────────┤
+│  Rust backend (src-tauri/src/)                         │
+│  14 modules: pty, sessions, config, worktree,          │
+│  file_tracker, analytics, checkpoints, code_search,    │
+│  git_graph, sharing, chaining, marketplace,            │
+│  compliance, ci_monitor, routing, plugins, updater     │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## Testing
 
 ```sh
-# Rust tests
-cd src-tauri && cargo test
+# Rust checks
+cd src-tauri && cargo check
+
+# TypeScript checks
+npx tsc --noEmit
 
 # Frontend tests
 npm test
-
-# Watch mode
-npm run test:watch
 ```
 
 ## License

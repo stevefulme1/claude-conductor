@@ -27,6 +27,7 @@ import PluginManager from "./components/PluginManager";
 import VoiceInput from "./components/VoiceInput";
 import SpatialCanvas from "./components/SpatialCanvas";
 import CIMonitor from "./components/CIMonitor";
+import HelpMenu from "./components/HelpMenu";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, SessionTemplate, AgentSuggestion, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
@@ -68,6 +69,7 @@ export default function App() {
   const [complianceEnabled, setComplianceEnabled] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [showCanvas, setShowCanvas] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -271,6 +273,11 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key === "?") {
+        e.preventDefault();
+        setShowHelp(prev => !prev);
+        return;
+      }
       if (meta && e.shiftKey && e.key === "v") {
         e.preventDefault();
         setShowVoice(prev => !prev);
@@ -395,6 +402,7 @@ export default function App() {
         onShowChains={() => setShowChains(true)}
         onShowTemplates={() => setShowTemplates(true)}
         onShowMarketplace={() => setShowMarketplace(true)}
+        onShowHelp={() => setShowHelp(true)}
       />
       <main
         style={{
@@ -730,6 +738,10 @@ export default function App() {
       <PluginManager
         visible={showPlugins}
         onClose={() => setShowPlugins(false)}
+      />
+      <HelpMenu
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
       />
     </div>
   );

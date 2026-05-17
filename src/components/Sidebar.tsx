@@ -27,6 +27,7 @@ interface Props {
   onShowMarketplace?: () => void;
   onShowPlugins?: () => void;
   onShowCompliance?: () => void;
+  onShowHelp?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -66,7 +67,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace, onShowPlugins, onShowCompliance }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus, onToggleKanban, showKanban, onShowProfiles, onShowChains, onShowTemplates, onShowMarketplace, onShowPlugins, onShowCompliance, onShowHelp }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -386,6 +387,17 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           </button>
+          <button
+            onClick={() => onShowHelp?.()}
+            style={styles.settingsBtn}
+            title="Help (Cmd+?)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </button>
         </div>
       </div>
     </aside>
@@ -539,29 +551,29 @@ const styles: Record<string, React.CSSProperties> = {
     alignSelf: "flex-start" as const,
   },
   footer: {
-    padding: "10px 16px",
+    padding: "8px 12px",
     borderTop: "1px solid var(--border-subtle)",
     position: "relative" as const,
   },
   footerRow: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    flexWrap: "wrap" as const,
+    gap: 2,
+    justifyContent: "center",
   },
   refreshBtn: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "6px 10px",
-    fontSize: 12,
+    gap: 4,
+    padding: "4px 8px",
+    fontSize: 11,
     color: "var(--text-secondary)",
     borderRadius: "var(--radius-sm)",
-    flex: 1,
-    justifyContent: "center",
     transition: "var(--transition)",
   },
   settingsBtn: {
-    padding: 6,
+    padding: 4,
     borderRadius: "var(--radius-sm)",
     color: "var(--text-tertiary)",
     transition: "var(--transition)",
