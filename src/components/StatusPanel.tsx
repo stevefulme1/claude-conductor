@@ -34,6 +34,7 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [daily, setDaily] = useState<DailyUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mcpChecking, setMcpChecking] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -41,15 +42,25 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
 
     Promise.all([
       invoke<StatusData>("get_status").catch(() => null),
-      invoke<McpStatus>("verify_mcp").catch(() => null),
       invoke<DailyUsage>("get_daily_usage").catch(() => null),
-    ]).then(([s, m, d]) => {
+    ]).then(([s, d]) => {
       setStatus(s);
-      setMcp(m);
       setDaily(d);
       setLoading(false);
     });
   }, [visible]);
+
+  async function checkMcp() {
+    setMcpChecking(true);
+    try {
+      const m = await invoke<McpStatus>("verify_mcp");
+      setMcp(m);
+    } catch {
+      setMcp(null);
+    } finally {
+      setMcpChecking(false);
+    }
+  }
 
   if (!visible) return null;
 
@@ -92,7 +103,16 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
             )}
 
             <div style={styles.section}>
-              <div style={styles.sectionTitle}>MCP Servers</div>
+              <div style={{ ...styles.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>MCP Servers</span>
+                <button
+                  onClick={checkMcp}
+                  disabled={mcpChecking}
+                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg-tertiary)", color: "var(--text-secondary)", cursor: mcpChecking ? "wait" : "pointer" }}
+                >
+                  {mcpChecking ? "Checking..." : mcp ? "Re-check" : "Check Connectivity"}
+                </button>
+              </div>
               {mcp && Object.keys(mcp).length > 0 ? (
                 <div style={styles.mcpList}>
                   {Object.entries(mcp).map(([name, info]) => (
@@ -114,7 +134,9 @@ export default function StatusPanel({ visible, onClose, openSessionCount }: Prop
                   ))}
                 </div>
               ) : (
-                <div style={styles.empty}>No MCP servers configured</div>
+                <div style={styles.empty}>
+                  {mcp ? "No MCP servers configured" : "Click \"Check Connectivity\" to verify MCP servers"}
+                </div>
               )}
             </div>
           </div>
