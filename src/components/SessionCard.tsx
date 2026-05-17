@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { SessionMeta } from "../types";
 
 interface Props {
@@ -37,6 +39,7 @@ export default function SessionCard({
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(label);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -45,6 +48,32 @@ export default function SessionCard({
       inputRef.current.select();
     }
   }, [editing]);
+
+  async function handleExport(e: React.MouseEvent, mode: "file" | "clipboard") {
+    e.stopPropagation();
+    if (!session.file_path) return;
+    try {
+      const markdown = await invoke<string>("export_session", { filePath: session.file_path });
+      if (mode === "clipboard") {
+        await navigator.clipboard.writeText(markdown);
+        setExportNotice("Copied to clipboard");
+      } else {
+        const defaultName = `session-${session.session_id.slice(0, 8)}.md`;
+        const destPath = await save({
+          defaultPath: defaultName,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (destPath) {
+          await invoke("save_export", { destPath, content: markdown });
+          setExportNotice("Saved");
+        }
+      }
+    } catch (err) {
+      console.error("Export failed:", err);
+      setExportNotice("Export failed");
+    }
+    setTimeout(() => setExportNotice(null), 2000);
+  }
 
   function startRename(e: React.MouseEvent) {
     e.stopPropagation();
@@ -102,6 +131,29 @@ export default function SessionCard({
           <div style={styles.topRight}>
             {hovered && (
               <>
+                {session.file_path && (
+                  <>
+                    <button
+                      onClick={(e) => handleExport(e, "clipboard")}
+                      style={styles.actionBtn}
+                      title="Copy transcript to clipboard"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => handleExport(e, "file")}
+                      style={styles.actionBtn}
+                      title="Export transcript as markdown"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={startRename}
                   style={styles.actionBtn}
@@ -129,6 +181,9 @@ export default function SessionCard({
       <div style={styles.message}>{session.first_message}</div>
       <div style={styles.meta}>
         <span style={styles.badge}>{session.message_count} msgs</span>
+        {exportNotice && (
+          <span style={{ fontSize: 10, color: "var(--success)", fontWeight: 500 }}>{exportNotice}</span>
+        )}
       </div>
     </button>
   );

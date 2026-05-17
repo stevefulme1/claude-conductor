@@ -15,6 +15,8 @@ import SplitPane, { splitPane, removePane, collectSessionIds } from "./component
 import KanbanBoard from "./components/KanbanBoard";
 import AgentProfileEditor from "./components/AgentProfileEditor";
 import BrowserPreview from "./components/BrowserPreview";
+import CodeSearch from "./components/CodeSearch";
+import GitGraph from "./components/GitGraph";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
@@ -44,6 +46,8 @@ export default function App() {
   const [showKanban, setShowKanban] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [showCodeSearch, setShowCodeSearch] = useState(false);
+  const [showGitGraph, setShowGitGraph] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -219,6 +223,16 @@ export default function App() {
       if (meta && e.shiftKey && e.key === "b") {
         e.preventDefault();
         setShowBrowser(prev => !prev);
+        return;
+      }
+      if (meta && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setShowCodeSearch(prev => !prev);
+        return;
+      }
+      if (meta && e.shiftKey && e.key === "g") {
+        e.preventDefault();
+        setShowGitGraph(prev => !prev);
         return;
       }
       if (meta && e.key === "d" && !e.shiftKey) {
@@ -419,6 +433,36 @@ export default function App() {
                   {showUsage ? "Hide Usage" : "Usage"}
                 </button>
               )}
+              <button
+                onClick={() => setShowGitGraph(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showGitGraph ? "var(--accent)" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+                title="Git Graph (Cmd+Shift+G)"
+              >
+                Git
+              </button>
+              <button
+                onClick={() => setShowCodeSearch(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showCodeSearch ? "var(--accent)" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+                title="Code Search (Cmd+Shift+F)"
+              >
+                Search
+              </button>
             </div>
             <FileChanges
               cwd={activeSession.cwd}
@@ -449,6 +493,20 @@ export default function App() {
         visible={showProfiles}
         onClose={() => setShowProfiles(false)}
       />
+      {activeSession && (
+        <>
+          <CodeSearch
+            cwd={activeSession.cwd}
+            visible={showCodeSearch}
+            onClose={() => setShowCodeSearch(false)}
+          />
+          <GitGraph
+            cwd={activeSession.cwd}
+            visible={showGitGraph}
+            onClose={() => setShowGitGraph(false)}
+          />
+        </>
+      )}
       {showBrowser && (
         <div style={{
           position: "fixed",

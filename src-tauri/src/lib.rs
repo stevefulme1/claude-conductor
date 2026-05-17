@@ -1,10 +1,13 @@
 mod analytics;
 mod checkpoints;
+mod code_search;
 mod config;
 mod digest;
 mod file_tracker;
+mod git_graph;
 mod pty;
 mod sessions;
+mod sharing;
 mod shell_env;
 mod sso;
 mod worktree;
@@ -227,6 +230,33 @@ fn detect_dev_servers() -> Result<Vec<config::DevServer>, String> {
     config::detect_dev_servers().map_err(|e| e.to_string())
 }
 
+// P3: Code Search
+#[tauri::command]
+fn search_code(
+    cwd: String,
+    query: String,
+    file_extensions: Option<Vec<String>>,
+) -> Result<Vec<code_search::SearchResult>, String> {
+    code_search::search_code(&cwd, &query, file_extensions)
+}
+
+// P3: Git Visualization
+#[tauri::command]
+fn get_git_log(cwd: String, limit: u32) -> Result<Vec<git_graph::GitLogEntry>, String> {
+    git_graph::get_git_log(&cwd, limit)
+}
+
+// P3: Session Sharing
+#[tauri::command]
+fn export_session(file_path: String) -> Result<String, String> {
+    sharing::export_session(&file_path)
+}
+
+#[tauri::command]
+fn save_export(dest_path: String, content: String) -> Result<(), String> {
+    sharing::save_export(&dest_path, &content)
+}
+
 #[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
@@ -323,6 +353,10 @@ pub fn run() {
             delete_agent_profile,
             check_port,
             detect_dev_servers,
+            search_code,
+            get_git_log,
+            export_session,
+            save_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

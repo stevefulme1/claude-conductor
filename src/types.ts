@@ -115,3 +115,22 @@ export interface DevServer {
   port: number;
   url: string;
 }
+
+// P3: Code Search
+export interface SearchResult {
+  file_path: string;
+  line_number: number;
+  line_content: string;
+  match_type: "text" | "symbol";
+}
+
+// P3: Git Visualization
+export interface GitLogEntry {
+  hash: string;
+  short_hash: string;
+  message: string;
+  author: string;
+  time_ago: string;
+  refs: string[];
+  graph_chars: string;
+}
