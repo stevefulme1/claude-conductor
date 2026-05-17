@@ -135,16 +135,20 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
   }
 
   async function startSso(serverName: string) {
+    console.log("[SSO] startSso called for:", serverName);
     if (
       !ssoAuthUrl.trim() ||
       !ssoTokenUrl.trim() ||
       !ssoClientId.trim()
     ) {
-      setError("Auth URL, Token URL, and Client ID are required");
+      setError("Auth URL, Token URL, and Client ID are required. Fill all fields above.");
+      console.log("[SSO] Missing fields:", { ssoAuthUrl, ssoTokenUrl, ssoClientId });
       return;
     }
     setSsoInProgress(serverName);
+    setError(null);
     try {
+      console.log("[SSO] Invoking start_sso...");
       const result = await invoke<{ auth_url: string; port: number }>(
         "start_sso",
         {
@@ -157,15 +161,19 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
           },
         }
       );
+      console.log("[SSO] Got auth URL, opening browser:", result.auth_url);
       try {
         await shellOpen(result.auth_url);
-      } catch {
+        console.log("[SSO] Browser opened successfully");
+      } catch (openErr) {
+        console.error("[SSO] Failed to open browser:", openErr);
         setSsoInProgress(null);
         await invoke("cancel_sso").catch(() => {});
-        setError("Failed to open browser for SSO login.");
+        setError(`Failed to open browser: ${openErr}`);
         return;
       }
     } catch (e) {
+      console.error("[SSO] Backend error:", e);
       setSsoInProgress(null);
       setError(`SSO failed: ${e}`);
     }

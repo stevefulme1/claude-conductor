@@ -153,7 +153,7 @@ export default function McpMarketplace({ visible, onClose }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  overlay: { position: "fixed", top: 36, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   panel: { width: 640, maxHeight: "85vh", background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-md)", display: "flex", flexDirection: "column", overflow: "hidden" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--border-subtle)" },
   title: { fontSize: 14, fontWeight: 600, color: "var(--text-primary)" },
