@@ -79,12 +79,42 @@ fn write_config_file(path: &PathBuf, content: &str) -> Result<(), Box<dyn std::e
 }
 
 fn read_raw_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let mut merged = serde_json::json!({});
+
+    // Read ~/.claude.json
     let cfg_path = config_path();
-    if !cfg_path.exists() {
-        return Ok(serde_json::json!({}));
+    if cfg_path.exists() {
+        let data = fs::read_to_string(&cfg_path)?;
+        merged = serde_json::from_str(&data)?;
     }
-    let data = fs::read_to_string(&cfg_path)?;
-    Ok(serde_json::from_str(&data)?)
+
+    // Merge ~/.claude/.mcp.json MCP servers
+    let mcp_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claude")
+        .join(".mcp.json");
+    if mcp_path.exists() {
+        if let Ok(data) = fs::read_to_string(&mcp_path) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&data) {
+                if let Some(servers) = parsed.get("mcpServers").and_then(|v| v.as_object()) {
+                    let merged_servers = merged
+                        .as_object_mut()
+                        .unwrap()
+                        .entry("mcpServers")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(obj) = merged_servers.as_object_mut() {
+                        for (name, val) in servers {
+                            if !obj.contains_key(name) {
+                                obj.insert(name.clone(), val.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(merged)
 }
 
 pub fn read_config() -> Result<ClaudeConfig, Box<dyn std::error::Error>> {
@@ -161,6 +191,54 @@ pub fn read_config() -> Result<ClaudeConfig, Box<dyn std::error::Error>> {
                     has_auth,
                     env_keys,
                 });
+            }
+        }
+    }
+
+    // Also read ~/.claude/.mcp.json (user-level MCP config used by Claude CLI)
+    let mcp_json_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claude")
+        .join(".mcp.json");
+    if mcp_json_path.exists() {
+        config_paths.push(mcp_json_path.to_string_lossy().to_string());
+        if let Ok(data) = fs::read_to_string(&mcp_json_path) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&data) {
+                if let Some(servers) = parsed.get("mcpServers").and_then(|v| v.as_object()) {
+                    for (name, server) in servers {
+                        if mcp_servers.iter().any(|s| s.name == *name) {
+                            continue;
+                        }
+                        let server_type = server
+                            .get("type")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                if server.get("url").is_some() { "http".to_string() }
+                                else { "stdio".to_string() }
+                            });
+                        let command_or_url = if server_type == "http" {
+                            server.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                        } else {
+                            server.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                        };
+                        let args = server.get("args").and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                            .unwrap_or_default();
+                        let has_env = server.get("env").and_then(|v| v.as_object()).map(|o| !o.is_empty()).unwrap_or(false);
+                        let env_keys = server.get("env").and_then(|v| v.as_object())
+                            .map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                        mcp_servers.push(McpServer {
+                            name: name.clone(),
+                            server_type,
+                            command_or_url,
+                            args,
+                            has_env,
+                            has_auth: has_env,
+                            env_keys,
+                        });
+                    }
+                }
             }
         }
     }
