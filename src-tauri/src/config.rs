@@ -859,6 +859,282 @@ pub fn add_mcp_server(server: NewMcpServer) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+// -- Smart MCP Auth Detection --
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthInfo {
+    pub auth_type: String,
+    pub has_token: bool,
+    pub token_valid: bool,
+    pub provider: String,
+    pub oauth_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TokenStatus {
+    pub valid: bool,
+    pub message: String,
+    pub expires_at: Option<String>,
+}
+
+pub fn get_auth_info(server_name: &str) -> Result<AuthInfo, Box<dyn std::error::Error>> {
+    let config = read_config()?;
+    let server = config
+        .mcp_servers
+        .iter()
+        .find(|s| s.name == *server_name)
+        .ok_or_else(|| format!("MCP server '{server_name}' not found"))?;
+
+    let name_lower = server_name.to_lowercase();
+    let url_lower = server.command_or_url.to_lowercase();
+    let cmd_lower = server.command_or_url.to_lowercase();
+
+    // Detect provider and auth type based on server name, command, or URL
+    if name_lower.contains("atlassian") || cmd_lower.contains("mcp-atlassian") {
+        let has_token = std::env::var("JIRA_TOKEN").map(|v| !v.is_empty()).unwrap_or(false)
+            || server.env_keys.iter().any(|k| k.contains("TOKEN") || k.contains("API_KEY"));
+        let token_valid = has_token;
+        return Ok(AuthInfo {
+            auth_type: "token".into(),
+            has_token,
+            token_valid,
+            provider: "Atlassian".into(),
+            oauth_url: None,
+        });
+    }
+
+    if name_lower.contains("tableau") {
+        let has_token = std::env::var("TABLEAU_PAT_SECRET").map(|v| !v.is_empty()).unwrap_or(false)
+            || server.env_keys.iter().any(|k| k.contains("TABLEAU"));
+        return Ok(AuthInfo {
+            auth_type: "token".into(),
+            has_token,
+            token_valid: has_token,
+            provider: "Tableau".into(),
+            oauth_url: None,
+        });
+    }
+
+    if name_lower.contains("github") {
+        let has_token = std::env::var("GITHUB_TOKEN").map(|v| !v.is_empty()).unwrap_or(false)
+            || server.env_keys.iter().any(|k| k.contains("GITHUB"));
+        return Ok(AuthInfo {
+            auth_type: "token".into(),
+            has_token,
+            token_valid: has_token,
+            provider: "GitHub".into(),
+            oauth_url: None,
+        });
+    }
+
+    if name_lower.contains("miro") || url_lower.contains("miro.com") {
+        let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
+            Some(server.command_or_url.clone())
+        } else {
+            None
+        };
+        return Ok(AuthInfo {
+            auth_type: "oauth".into(),
+            has_token: false,
+            token_valid: false,
+            provider: "Miro".into(),
+            oauth_url,
+        });
+    }
+
+    if name_lower.contains("plasmic") || url_lower.contains("pipedream") {
+        let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
+            Some(server.command_or_url.clone())
+        } else {
+            None
+        };
+        return Ok(AuthInfo {
+            auth_type: "oauth".into(),
+            has_token: false,
+            token_valid: false,
+            provider: "Plasmic".into(),
+            oauth_url,
+        });
+    }
+
+    if name_lower.contains("framer") || url_lower.contains("framer.com") {
+        let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
+            Some(server.command_or_url.clone())
+        } else {
+            None
+        };
+        return Ok(AuthInfo {
+            auth_type: "oauth".into(),
+            has_token: false,
+            token_valid: false,
+            provider: "Framer".into(),
+            oauth_url,
+        });
+    }
+
+    // Check if the server has env vars that look like tokens
+    if server.has_env && server.env_keys.iter().any(|k| {
+        let ku = k.to_uppercase();
+        ku.contains("TOKEN") || ku.contains("API_KEY") || ku.contains("SECRET") || ku.contains("PASSWORD")
+    }) {
+        let raw_config = read_raw_config()?;
+        let env_obj = raw_config
+            .get("mcpServers")
+            .and_then(|s| s.get(server_name))
+            .and_then(|s| s.get("env"))
+            .and_then(|v| v.as_object());
+
+        let has_token = env_obj
+            .map(|env| {
+                env.iter().any(|(k, v)| {
+                    let ku = k.to_uppercase();
+                    (ku.contains("TOKEN") || ku.contains("API_KEY") || ku.contains("SECRET"))
+                        && v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+
+        return Ok(AuthInfo {
+            auth_type: "token".into(),
+            has_token,
+            token_valid: has_token,
+            provider: server_name.to_string(),
+            oauth_url: None,
+        });
+    }
+
+    // Check if server has auth headers
+    if server.has_auth && server.server_type == "http" {
+        let raw_config = read_raw_config()?;
+        let has_auth_header = raw_config
+            .get("mcpServers")
+            .and_then(|s| s.get(server_name))
+            .and_then(|s| s.get("headers"))
+            .and_then(|v| v.as_object())
+            .map(|h| h.keys().any(|k| k.to_lowercase() == "authorization"))
+            .unwrap_or(false);
+        if has_auth_header {
+            return Ok(AuthInfo {
+                auth_type: "token".into(),
+                has_token: true,
+                token_valid: true,
+                provider: server_name.to_string(),
+                oauth_url: None,
+            });
+        }
+    }
+
+    Ok(AuthInfo {
+        auth_type: "none".into(),
+        has_token: false,
+        token_valid: false,
+        provider: server_name.to_string(),
+        oauth_url: None,
+    })
+}
+
+pub fn validate_token(server_name: &str) -> Result<TokenStatus, Box<dyn std::error::Error>> {
+    let config = read_config()?;
+    let server = config
+        .mcp_servers
+        .iter()
+        .find(|s| s.name == *server_name)
+        .ok_or_else(|| format!("MCP server '{server_name}' not found"))?;
+
+    let auth_info = get_auth_info(server_name)?;
+
+    if auth_info.auth_type == "none" {
+        return Ok(TokenStatus {
+            valid: true,
+            message: "No authentication required".into(),
+            expires_at: None,
+        });
+    }
+
+    if auth_info.auth_type == "oauth" {
+        return Ok(TokenStatus {
+            valid: false,
+            message: "OAuth authentication — use browser login".into(),
+            expires_at: None,
+        });
+    }
+
+    // For HTTP servers, try a HEAD request
+    if server.server_type == "http" && !server.command_or_url.is_empty() {
+        let raw_config = read_raw_config()?;
+        let server_config = raw_config
+            .get("mcpServers")
+            .and_then(|s| s.get(server_name));
+
+        let mut curl_config = String::new();
+        curl_config.push_str(&format!("url = \"{}\"\n", server.command_or_url));
+        curl_config.push_str("silent\n");
+        curl_config.push_str("fail\n");
+        curl_config.push_str("max-time = 5\n");
+        curl_config.push_str("output = /dev/null\n");
+        curl_config.push_str("write-out = \"%{http_code}\"\n");
+
+        if let Some(headers) = server_config
+            .and_then(|s| s.get("headers"))
+            .and_then(|v| v.as_object())
+        {
+            for (key, val) in headers {
+                if let Some(v) = val.as_str() {
+                    curl_config.push_str(&format!("header = \"{key}: {v}\"\n"));
+                }
+            }
+        }
+
+        let mut curl_cmd = std::process::Command::new("curl");
+        curl_cmd.arg("--config").arg("-");
+        curl_cmd.stdin(std::process::Stdio::piped());
+        curl_cmd.stdout(std::process::Stdio::piped());
+        curl_cmd.stderr(std::process::Stdio::piped());
+
+        if let Ok(mut child) = curl_cmd.spawn() {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(curl_config.as_bytes());
+            }
+            if let Ok(output) = child.wait_with_output() {
+                let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                return match code.as_str() {
+                    "200" | "204" | "301" | "302" | "405" => Ok(TokenStatus {
+                        valid: true,
+                        message: format!("Token valid (HTTP {code})"),
+                        expires_at: None,
+                    }),
+                    "401" | "403" => Ok(TokenStatus {
+                        valid: false,
+                        message: format!("Token rejected (HTTP {code})"),
+                        expires_at: None,
+                    }),
+                    _ => Ok(TokenStatus {
+                        valid: false,
+                        message: format!("Unexpected response (HTTP {code})"),
+                        expires_at: None,
+                    }),
+                };
+            }
+        }
+    }
+
+    // For stdio servers, just check if env vars are set
+    if auth_info.has_token {
+        Ok(TokenStatus {
+            valid: true,
+            message: "Token is configured".into(),
+            expires_at: None,
+        })
+    } else {
+        Ok(TokenStatus {
+            valid: false,
+            message: "No token configured".into(),
+            expires_at: None,
+        })
+    }
+}
+
 fn conductor_config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))

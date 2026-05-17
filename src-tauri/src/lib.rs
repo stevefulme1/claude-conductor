@@ -140,6 +140,16 @@ fn add_mcp(server: config::NewMcpServer) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_auth_info(server_name: String) -> Result<config::AuthInfo, String> {
+    config::get_auth_info(&server_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn validate_token(server_name: String) -> Result<config::TokenStatus, String> {
+    config::validate_token(&server_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn start_sso(app: tauri::AppHandle, config: sso::SsoConfig) -> Result<sso::SsoStartResult, String> {
     sso::start_sso_flow(app, config).map_err(|e| e.to_string())
 }
@@ -481,6 +491,8 @@ pub fn run() {
             update_mcp_auth,
             toggle_mcp,
             add_mcp,
+            get_auth_info,
+            validate_token,
             start_sso,
             cancel_sso,
             get_session_labels,

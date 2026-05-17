@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
-import { McpServer, McpStatus, ClaudeConfig } from "../types";
+import { McpServer, McpStatus, ClaudeConfig, AuthInfo, TokenStatus } from "../types";
 
 interface Props {
   visible: boolean;
@@ -35,6 +35,9 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
   const [ssoClientId, setSsoClientId] = useState("");
   const [ssoScopes, setSsoScopes] = useState("");
   const [ssoInProgress, setSsoInProgress] = useState<string | null>(null);
+  const [authInfoMap, setAuthInfoMap] = useState<Record<string, AuthInfo>>({});
+  const [tokenStatusMap, setTokenStatusMap] = useState<Record<string, TokenStatus>>({});
+  const [validatingToken, setValidatingToken] = useState<string | null>(null);
 
   useEffect(() => {
     loadConfig();
@@ -188,6 +191,36 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
     setSsoInProgress(null);
   }
 
+  async function fetchAuthInfo(serverName: string) {
+    if (authInfoMap[serverName]) return;
+    try {
+      const info = await invoke<AuthInfo>("get_auth_info", { serverName });
+      setAuthInfoMap((prev) => ({ ...prev, [serverName]: info }));
+    } catch (e) {
+      console.error(`Failed to get auth info for ${serverName}:`, e);
+    }
+  }
+
+  async function doValidateToken(serverName: string) {
+    setValidatingToken(serverName);
+    try {
+      const status = await invoke<TokenStatus>("validate_token", { serverName });
+      setTokenStatusMap((prev) => ({ ...prev, [serverName]: status }));
+    } catch (e) {
+      setError(`Token validation failed: ${e}`);
+    } finally {
+      setValidatingToken(null);
+    }
+  }
+
+  async function openOAuthUrl(serverName: string, url: string) {
+    try {
+      await shellOpen(url);
+    } catch (e) {
+      setError(`Failed to open browser: ${e}`);
+    }
+  }
+
   async function addServer() {
     const envVars: Record<string, string> = {};
     if (newEnvPairs.trim()) {
@@ -310,9 +343,11 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
               <div key={server.name} style={styles.mcpCard}>
                 <div
                   style={styles.mcpRow}
-                  onClick={() =>
-                    setExpandedServer(isExpanded ? null : server.name)
-                  }
+                  onClick={() => {
+                    const next = isExpanded ? null : server.name;
+                    setExpandedServer(next);
+                    if (next) fetchAuthInfo(server.name);
+                  }}
                 >
                   <span
                     style={styles.statusDot(status?.reachable ?? false)}
@@ -373,7 +408,103 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                         {isReconnecting ? "Testing..." : "Reconnect"}
                       </button>
 
-                      {server.server_type === "http" && (
+                      {(() => {
+                        const authInfo = authInfoMap[server.name];
+                        if (!authInfo) return null;
+
+                        if (authInfo.auth_type === "token") {
+                          return (
+                            <>
+                              <span style={{
+                                fontSize: 11,
+                                color: authInfo.has_token ? "var(--success)" : "var(--danger)",
+                                padding: "4px 8px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                              }}>
+                                {authInfo.has_token ? "✓ Token configured" : "✗ No token"}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  doValidateToken(server.name);
+                                }}
+                                disabled={validatingToken === server.name}
+                                style={styles.actionBtn}
+                              >
+                                {validatingToken === server.name ? "Checking..." : "Validate"}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAuthEditing(
+                                    isEditingAuth ? null : server.name
+                                  );
+                                  setAuthToken("");
+                                  setSsoEditing(null);
+                                }}
+                                style={styles.actionBtn}
+                              >
+                                {isEditingAuth ? "Cancel" : "Update Token"}
+                              </button>
+                            </>
+                          );
+                        }
+
+                        if (authInfo.auth_type === "oauth") {
+                          return (
+                            <>
+                              {authInfo.oauth_url ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openOAuthUrl(server.name, authInfo.oauth_url!);
+                                  }}
+                                  style={styles.ssoBtn}
+                                >
+                                  Login with {authInfo.provider}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (ssoEditing === server.name) {
+                                      setSsoEditing(null);
+                                    } else {
+                                      setSsoEditing(server.name);
+                                      setSsoAuthUrl("");
+                                      setSsoTokenUrl("");
+                                      setSsoClientId("");
+                                      setSsoScopes("");
+                                    }
+                                    setAuthEditing(null);
+                                  }}
+                                  style={styles.ssoBtn}
+                                >
+                                  {ssoEditing === server.name
+                                    ? "Cancel"
+                                    : `Login with ${authInfo.provider}`}
+                                </button>
+                              )}
+                            </>
+                          );
+                        }
+
+                        // auth_type === "none"
+                        return (
+                          <span style={{
+                            fontSize: 11,
+                            color: "var(--text-tertiary)",
+                            padding: "4px 8px",
+                          }}>
+                            No auth required
+                          </span>
+                        );
+                      })()}
+
+                      {/* Fallback auth buttons when auth info not yet loaded */}
+                      {!authInfoMap[server.name] && server.server_type === "http" && (
                         <>
                           <button
                             onClick={(e) => {
@@ -443,6 +574,43 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
                         Disable
                       </button>
                     </div>
+
+                    {/* Token validation result */}
+                    {tokenStatusMap[server.name] && (
+                      <div style={{
+                        padding: "6px 8px",
+                        marginBottom: 6,
+                        borderRadius: "var(--radius-sm)",
+                        background: tokenStatusMap[server.name].valid
+                          ? "rgba(74, 222, 128, 0.1)"
+                          : "rgba(248, 113, 113, 0.1)",
+                        border: `1px solid ${tokenStatusMap[server.name].valid
+                          ? "rgba(74, 222, 128, 0.2)"
+                          : "rgba(248, 113, 113, 0.2)"}`,
+                        fontSize: 11,
+                        color: tokenStatusMap[server.name].valid
+                          ? "var(--success)"
+                          : "var(--danger)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}>
+                        <span>{tokenStatusMap[server.name].message}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTokenStatusMap((prev) => {
+                              const next = { ...prev };
+                              delete next[server.name];
+                              return next;
+                            });
+                          }}
+                          style={styles.dismissBtn}
+                        >
+                          dismiss
+                        </button>
+                      </div>
+                    )}
 
                     {isEditingAuth && (
                       <div style={styles.authForm}>
