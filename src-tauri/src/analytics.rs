@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -11,6 +12,34 @@ pub struct SessionUsage {
     pub estimated_cost_usd: f64,
     pub duration_seconds: f64,
     pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelUsage {
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_usd: f64,
+    pub message_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyUsage {
+    pub total_sessions: usize,
+    pub total_messages: usize,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cost_usd: f64,
+    pub by_model: HashMap<String, ModelUsage>,
+    pub session_costs: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReplayMessage {
+    pub role: String,
+    pub content: String,
+    pub timestamp: String,
+    pub turn_number: usize,
 }
 
 #[derive(serde::Deserialize)]
@@ -185,4 +214,175 @@ fn estimate_cost(model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
 
     (input_tokens as f64 / 1_000_000.0) * input_price
         + (output_tokens as f64 / 1_000_000.0) * output_price
+}
+
+fn normalize_model(model: &str) -> String {
+    let lower = model.to_lowercase();
+    if lower.contains("opus") {
+        "opus".to_string()
+    } else if lower.contains("haiku") {
+        "haiku".to_string()
+    } else if lower.contains("sonnet") {
+        "sonnet".to_string()
+    } else if lower.is_empty() {
+        "unknown".to_string()
+    } else {
+        lower
+    }
+}
+
+/// Aggregate usage across all sessions modified today.
+pub fn get_daily_usage() -> Result<DailyUsage, String> {
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+    if !projects_dir.exists() {
+        return Ok(DailyUsage {
+            total_sessions: 0,
+            total_messages: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cost_usd: 0.0,
+            by_model: HashMap::new(),
+            session_costs: Vec::new(),
+        });
+    }
+
+    let today = chrono::Local::now().date_naive();
+    let mut total_sessions = 0usize;
+    let mut total_messages = 0usize;
+    let mut total_input_tokens = 0u64;
+    let mut total_output_tokens = 0u64;
+    let mut total_cost_usd = 0.0f64;
+    let mut by_model: HashMap<String, ModelUsage> = HashMap::new();
+    let mut session_costs: Vec<f64> = Vec::new();
+
+    fn walk_jsonl(dir: &Path, results: &mut Vec<std::path::PathBuf>, today: chrono::NaiveDate) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk_jsonl(&path, results, today);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    if let Ok(meta) = fs::metadata(&path) {
+                        if let Ok(modified) = meta.modified() {
+                            let dt: chrono::DateTime<chrono::Local> = modified.into();
+                            if dt.date_naive() == today {
+                                results.push(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    walk_jsonl(&projects_dir, &mut files, today);
+
+    for file_path in &files {
+        let path_str = file_path.to_string_lossy().to_string();
+        if let Ok(usage) = get_session_usage(&path_str) {
+            total_sessions += 1;
+            total_messages += usage.message_count;
+            total_input_tokens += usage.input_tokens;
+            total_output_tokens += usage.output_tokens;
+            total_cost_usd += usage.estimated_cost_usd;
+            session_costs.push(usage.estimated_cost_usd);
+
+            let model_key = normalize_model(&usage.model);
+            let entry = by_model.entry(model_key.clone()).or_insert_with(|| ModelUsage {
+                model: model_key,
+                input_tokens: 0,
+                output_tokens: 0,
+                cost_usd: 0.0,
+                message_count: 0,
+            });
+            entry.input_tokens += usage.input_tokens;
+            entry.output_tokens += usage.output_tokens;
+            entry.cost_usd += usage.estimated_cost_usd;
+            entry.message_count += usage.message_count;
+        }
+    }
+
+    Ok(DailyUsage {
+        total_sessions,
+        total_messages,
+        total_input_tokens,
+        total_output_tokens,
+        total_cost_usd,
+        by_model,
+        session_costs,
+    })
+}
+
+/// Parse a JSONL session file and extract messages for replay.
+pub fn get_session_transcript(file_path: &str) -> Result<Vec<ReplayMessage>, String> {
+    let path = Path::new(file_path);
+    if !path.exists() {
+        return Err(format!("Session file not found: {}", file_path));
+    }
+
+    let file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open session file: {e}"))?;
+    let reader = BufReader::new(file);
+    let mut messages = Vec::new();
+    let mut turn = 0usize;
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let parsed: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if msg_type != "user" && msg_type != "assistant" {
+            continue;
+        }
+
+        turn += 1;
+        let timestamp = parsed.get("timestamp")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Extract content: try message.content first, then message.text
+        let content = parsed.get("message")
+            .and_then(|m| {
+                // content could be a string or array of blocks
+                if let Some(s) = m.get("content").and_then(|c| c.as_str()) {
+                    Some(s.to_string())
+                } else if let Some(arr) = m.get("content").and_then(|c| c.as_array()) {
+                    let mut text_parts = Vec::new();
+                    for block in arr {
+                        if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                            text_parts.push(t.to_string());
+                        }
+                    }
+                    if text_parts.is_empty() { None } else { Some(text_parts.join("\n")) }
+                } else {
+                    m.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_default();
+
+        // Truncate to a reasonable preview length
+        let preview = if content.len() > 500 {
+            format!("{}...", &content[..497])
+        } else {
+            content
+        };
+
+        messages.push(ReplayMessage {
+            role: msg_type.to_string(),
+            content: preview,
+            timestamp,
+            turn_number: turn,
+        });
+    }
+
+    Ok(messages)
 }

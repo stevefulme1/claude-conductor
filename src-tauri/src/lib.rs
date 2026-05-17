@@ -1,10 +1,12 @@
 mod analytics;
+mod chaining;
 mod checkpoints;
 mod code_search;
 mod config;
 mod digest;
 mod file_tracker;
 mod git_graph;
+mod marketplace;
 mod pty;
 mod sessions;
 mod sharing;
@@ -277,6 +279,71 @@ fn get_status() -> Result<serde_json::Value, String> {
     Ok(sys_info)
 }
 
+// Tier 1: Session Cost Calculator
+#[tauri::command]
+fn get_daily_usage() -> Result<analytics::DailyUsage, String> {
+    analytics::get_daily_usage()
+}
+
+// Tier 1: Session Replay
+#[tauri::command]
+fn get_session_transcript(file_path: String) -> Result<Vec<analytics::ReplayMessage>, String> {
+    analytics::get_session_transcript(&file_path)
+}
+
+// Tier 1: Agent Handoff / Session Chaining
+#[tauri::command]
+fn create_chain(name: String, steps: Vec<chaining::ChainStep>) -> Result<String, String> {
+    chaining::create_chain(&name, steps)
+}
+
+#[tauri::command]
+fn get_chain(chain_id: String) -> Result<chaining::SessionChain, String> {
+    chaining::get_chain(&chain_id)
+}
+
+#[tauri::command]
+fn list_chains() -> Result<Vec<chaining::SessionChain>, String> {
+    chaining::list_chains()
+}
+
+#[tauri::command]
+fn advance_chain(chain_id: String) -> Result<chaining::ChainStep, String> {
+    chaining::advance_chain(&chain_id)
+}
+
+#[tauri::command]
+fn delete_chain(chain_id: String) -> Result<(), String> {
+    chaining::delete_chain(&chain_id)
+}
+
+// Tier 1: Session Templates
+#[tauri::command]
+fn get_session_templates() -> Result<Vec<config::SessionTemplate>, String> {
+    config::get_session_templates().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_session_template(template: config::SessionTemplate) -> Result<(), String> {
+    config::save_session_template(template).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_session_template(name: String) -> Result<(), String> {
+    config::delete_session_template(&name).map_err(|e| e.to_string())
+}
+
+// Tier 1: MCP Marketplace
+#[tauri::command]
+fn list_marketplace() -> Result<Vec<marketplace::McpServerEntry>, String> {
+    marketplace::list_marketplace()
+}
+
+#[tauri::command]
+fn install_mcp_from_marketplace(name: String) -> Result<(), String> {
+    marketplace::install_mcp_from_marketplace(&name)
+}
+
 fn start_digest_timer(shutdown: Arc<AtomicBool>) {
     thread::spawn(move || {
         while !shutdown.load(Ordering::Relaxed) {
@@ -357,6 +424,18 @@ pub fn run() {
             get_git_log,
             export_session,
             save_export,
+            get_daily_usage,
+            get_session_transcript,
+            create_chain,
+            get_chain,
+            list_chains,
+            advance_chain,
+            delete_chain,
+            get_session_templates,
+            save_session_template,
+            delete_session_template,
+            list_marketplace,
+            install_mcp_from_marketplace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

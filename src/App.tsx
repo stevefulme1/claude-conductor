@@ -17,8 +17,12 @@ import AgentProfileEditor from "./components/AgentProfileEditor";
 import BrowserPreview from "./components/BrowserPreview";
 import CodeSearch from "./components/CodeSearch";
 import GitGraph from "./components/GitGraph";
+import ChainEditor from "./components/ChainEditor";
+import TemplateSelector from "./components/TemplateSelector";
+import McpMarketplace from "./components/McpMarketplace";
+import SessionReplay from "./components/SessionReplay";
 import { useTheme } from "./hooks/useTheme";
-import { SessionMeta, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
+import { SessionMeta, SessionTemplate, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
 function startDrag(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 1) {
@@ -48,6 +52,10 @@ export default function App() {
   const [showBrowser, setShowBrowser] = useState(false);
   const [showCodeSearch, setShowCodeSearch] = useState(false);
   const [showGitGraph, setShowGitGraph] = useState(false);
+  const [showChains, setShowChains] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [replayFilePath, setReplayFilePath] = useState<string | null>(null);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -220,6 +228,16 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.shiftKey && e.key === "c") {
+        e.preventDefault();
+        setShowChains(prev => !prev);
+        return;
+      }
+      if (meta && e.shiftKey && e.key === "t") {
+        e.preventDefault();
+        setShowTemplates(prev => !prev);
+        return;
+      }
       if (meta && e.shiftKey && e.key === "b") {
         e.preventDefault();
         setShowBrowser(prev => !prev);
@@ -297,6 +315,10 @@ export default function App() {
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
+  const handleTemplateSelect = useCallback((template: SessionTemplate) => {
+    handleNewSession(template.agent);
+  }, [handleNewSession]);
+
   // Feature 2: Desktop Notifications — request permission on launch
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -317,6 +339,9 @@ export default function App() {
         onToggleKanban={() => setShowKanban(prev => !prev)}
         showKanban={showKanban}
         onShowProfiles={() => setShowProfiles(true)}
+        onShowChains={() => setShowChains(true)}
+        onShowTemplates={() => setShowTemplates(true)}
+        onShowMarketplace={() => setShowMarketplace(true)}
       />
       <main
         style={{
@@ -418,20 +443,37 @@ export default function App() {
                 {showCheckpoints ? "Hide Checkpoints" : "Checkpoints"}
               </button>
               {activeSession.file_path && (
-                <button
-                  onClick={() => setShowUsage(prev => !prev)}
-                  style={{
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    borderRadius: "var(--radius-sm)",
-                    color: showUsage ? "var(--accent)" : "var(--text-tertiary)",
-                    cursor: "pointer",
-                    background: "none",
-                    border: "none",
-                  }}
-                >
-                  {showUsage ? "Hide Usage" : "Usage"}
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowUsage(prev => !prev)}
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 8px",
+                      borderRadius: "var(--radius-sm)",
+                      color: showUsage ? "var(--accent)" : "var(--text-tertiary)",
+                      cursor: "pointer",
+                      background: "none",
+                      border: "none",
+                    }}
+                  >
+                    {showUsage ? "Hide Usage" : "Usage"}
+                  </button>
+                  <button
+                    onClick={() => setReplayFilePath(activeSession.file_path)}
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 8px",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--text-tertiary)",
+                      cursor: "pointer",
+                      background: "none",
+                      border: "none",
+                    }}
+                    title="Replay this session"
+                  >
+                    Replay
+                  </button>
+                </>
               )}
               <button
                 onClick={() => setShowGitGraph(prev => !prev)}
@@ -522,6 +564,27 @@ export default function App() {
             onClose={() => setShowBrowser(false)}
           />
         </div>
+      )}
+      <ChainEditor
+        visible={showChains}
+        onClose={() => setShowChains(false)}
+        onLaunchStep={(agent, _prompt) => handleNewSession(agent)}
+      />
+      <TemplateSelector
+        visible={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onSelect={handleTemplateSelect}
+      />
+      <McpMarketplace
+        visible={showMarketplace}
+        onClose={() => setShowMarketplace(false)}
+      />
+      {replayFilePath && (
+        <SessionReplay
+          filePath={replayFilePath}
+          visible={true}
+          onClose={() => setReplayFilePath(null)}
+        />
       )}
     </div>
   );

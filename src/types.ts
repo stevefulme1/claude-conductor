@@ -124,6 +124,66 @@ export interface SearchResult {
   match_type: "text" | "symbol";
 }
 
+// Tier 1: Daily Usage / Cost Calculator
+export interface ModelUsage {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  message_count: number;
+}
+
+export interface DailyUsage {
+  total_sessions: number;
+  total_messages: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  by_model: Record<string, ModelUsage>;
+  session_costs: number[];
+}
+
+// Tier 1: Session Chaining
+export interface ChainStep {
+  agent: string;
+  prompt: string;
+  status: string;
+}
+
+export interface SessionChain {
+  id: string;
+  name: string;
+  steps: ChainStep[];
+  current_step: number;
+}
+
+// Tier 1: Session Templates
+export interface SessionTemplate {
+  name: string;
+  agent: string;
+  cwd_pattern?: string;
+  mcp_servers: string[];
+  description: string;
+}
+
+// Tier 1: MCP Marketplace
+export interface McpServerEntry {
+  name: string;
+  description: string;
+  install_type: string;
+  install_command: string;
+  config_template: unknown;
+  category: string;
+}
+
+// Tier 1: Session Replay
+export interface ReplayMessage {
+  role: string;
+  content: string;
+  timestamp: string;
+  turn_number: number;
+}
+
 // P3: Git Visualization
 export interface GitLogEntry {
   hash: string;

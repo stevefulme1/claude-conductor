@@ -937,6 +937,100 @@ pub fn detect_dev_servers() -> Result<Vec<DevServer>, Box<dyn std::error::Error>
     Ok(servers)
 }
 
+// -- Session Templates --
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTemplate {
+    pub name: String,
+    pub agent: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd_pattern: Option<String>,
+    #[serde(default)]
+    pub mcp_servers: Vec<String>,
+    pub description: String,
+}
+
+fn default_templates() -> Vec<SessionTemplate> {
+    vec![
+        SessionTemplate {
+            name: "Code Review".to_string(),
+            agent: "claude".to_string(),
+            cwd_pattern: None,
+            mcp_servers: vec![],
+            description: "Review code for bugs, style, and best practices".to_string(),
+        },
+        SessionTemplate {
+            name: "Implement Feature".to_string(),
+            agent: "claude".to_string(),
+            cwd_pattern: None,
+            mcp_servers: vec![],
+            description: "Implement a new feature with tests".to_string(),
+        },
+        SessionTemplate {
+            name: "Research".to_string(),
+            agent: "claude".to_string(),
+            cwd_pattern: None,
+            mcp_servers: vec!["brave-search".to_string()],
+            description: "Research a topic using web search and analysis".to_string(),
+        },
+    ]
+}
+
+pub fn get_session_templates() -> Result<Vec<SessionTemplate>, Box<dyn std::error::Error>> {
+    let config = read_conductor_config()?;
+    let templates = config
+        .get("templates")
+        .and_then(|v| serde_json::from_value::<Vec<SessionTemplate>>(v.clone()).ok());
+
+    match templates {
+        Some(t) if !t.is_empty() => Ok(t),
+        _ => Ok(default_templates()),
+    }
+}
+
+pub fn save_session_template(template: SessionTemplate) -> Result<(), Box<dyn std::error::Error>> {
+    if template.name.trim().is_empty() {
+        return Err("Template name cannot be empty".into());
+    }
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let mut config = read_conductor_config()?;
+    let templates_val = config
+        .as_object_mut()
+        .ok_or("Invalid conductor config")?
+        .entry("templates")
+        .or_insert_with(|| serde_json::to_value(default_templates()).unwrap_or(serde_json::json!([])));
+
+    let mut templates: Vec<SessionTemplate> = serde_json::from_value(templates_val.clone()).unwrap_or_default();
+    if let Some(existing) = templates.iter_mut().find(|t| t.name == template.name) {
+        *existing = template;
+    } else {
+        templates.push(template);
+    }
+    *templates_val = serde_json::to_value(&templates)?;
+    write_conductor_config(&config)?;
+    Ok(())
+}
+
+pub fn delete_session_template(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = CONFIG_WRITE_LOCK.lock();
+    let mut config = read_conductor_config()?;
+    let templates_val = config
+        .as_object_mut()
+        .ok_or("Invalid conductor config")?
+        .entry("templates")
+        .or_insert_with(|| serde_json::to_value(default_templates()).unwrap_or(serde_json::json!([])));
+
+    let mut templates: Vec<SessionTemplate> = serde_json::from_value(templates_val.clone()).unwrap_or_default();
+    let before = templates.len();
+    templates.retain(|t| t.name != name);
+    if templates.len() == before {
+        return Err(format!("Template '{}' not found", name).into());
+    }
+    *templates_val = serde_json::to_value(&templates)?;
+    write_conductor_config(&config)?;
+    Ok(())
+}
+
 fn labels_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))

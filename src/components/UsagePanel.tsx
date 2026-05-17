@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionUsage } from "../types";
+import { SessionUsage, DailyUsage } from "../types";
 
 interface Props {
   filePath: string;
@@ -28,9 +28,35 @@ function formatDuration(seconds: number): string {
   return `${hours}h ${remMins}m`;
 }
 
+function CostBar({ costs }: { costs: number[] }) {
+  if (costs.length === 0) return null;
+  const max = Math.max(...costs, 0.01);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 32, marginTop: 4 }}>
+      {costs.map((c, i) => (
+        <div
+          key={i}
+          title={formatCost(c)}
+          style={{
+            flex: 1,
+            height: `${Math.max((c / max) * 100, 4)}%`,
+            background: "var(--accent)",
+            borderRadius: 2,
+            opacity: 0.7 + 0.3 * (c / max),
+            minWidth: 3,
+            maxWidth: 16,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function UsagePanel({ filePath, visible }: Props) {
   const [usage, setUsage] = useState<SessionUsage | null>(null);
+  const [daily, setDaily] = useState<DailyUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showDaily, setShowDaily] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -46,8 +72,16 @@ export default function UsagePanel({ filePath, visible }: Props) {
       }
     };
 
+    const fetchDaily = async () => {
+      try {
+        const result = await invoke<DailyUsage>("get_daily_usage");
+        setDaily(result);
+      } catch (_) { /* non-critical */ }
+    };
+
     fetchUsage();
-    timerRef.current = setInterval(fetchUsage, 15000);
+    fetchDaily();
+    timerRef.current = setInterval(() => { fetchUsage(); fetchDaily(); }, 15000);
 
     return () => {
       if (timerRef.current) {
@@ -59,13 +93,30 @@ export default function UsagePanel({ filePath, visible }: Props) {
 
   if (!visible || !filePath) return null;
 
+  const modelEntries = daily ? Object.values(daily.by_model) : [];
+
   return (
     <div style={styles.panel}>
       <div style={styles.header}>
         <span style={styles.title}>Usage</span>
+        <button
+          onClick={() => setShowDaily(!showDaily)}
+          style={{
+            fontSize: 10,
+            padding: "2px 6px",
+            borderRadius: "var(--radius-sm)",
+            background: showDaily ? "var(--accent-muted)" : "none",
+            color: showDaily ? "var(--accent)" : "var(--text-tertiary)",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          {showDaily ? "Session" : "Daily Total"}
+        </button>
       </div>
       {error && <div style={styles.error}>{error}</div>}
-      {usage && (
+
+      {!showDaily && usage && (
         <div style={styles.stats}>
           <div style={styles.stat}>
             <span style={styles.statLabel}>Messages</span>
@@ -97,6 +148,62 @@ export default function UsagePanel({ filePath, visible }: Props) {
           )}
         </div>
       )}
+
+      {showDaily && daily && (
+        <div>
+          <div style={styles.stats}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Sessions</span>
+              <span style={styles.statValue}>{daily.total_sessions}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Messages</span>
+              <span style={styles.statValue}>{daily.total_messages}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Input</span>
+              <span style={styles.statValue}>{formatTokens(daily.total_input_tokens)}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Output</span>
+              <span style={styles.statValue}>{formatTokens(daily.total_output_tokens)}</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Total Cost</span>
+              <span style={{ ...styles.statValue, color: "var(--accent)", fontWeight: 700 }}>
+                {formatCost(daily.total_cost_usd)}
+              </span>
+            </div>
+          </div>
+
+          {modelEntries.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase" as const, letterSpacing: "0.04em", marginBottom: 4 }}>
+                Per-Model Breakdown
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" as const }}>
+                {modelEntries.map(m => (
+                  <div key={m.model} style={{ display: "flex", flexDirection: "column" as const, gap: 1 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "capitalize" as const }}>{m.model}</span>
+                    <span style={{ fontSize: 11, fontFamily: "'SF Mono', monospace", color: "var(--text-primary)" }}>
+                      {formatCost(m.cost_usd)} / {m.message_count} msgs
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {daily.session_costs.length > 1 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase" as const, letterSpacing: "0.04em", marginBottom: 2 }}>
+                Cost per Session
+              </div>
+              <CostBar costs={daily.session_costs} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -110,6 +217,7 @@ const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 8,
     marginBottom: 4,
   },
