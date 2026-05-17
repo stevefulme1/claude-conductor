@@ -362,16 +362,10 @@ export default function App() {
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
-    const unlisten = appWindow.onCloseRequested(async (e) => {
-      const running = runningSessions.current.size;
-      if (running > 0) {
-        const confirmed = window.confirm(
-          `You have ${running} running session(s). Close anyway?`
-        );
-        if (!confirmed) {
-          e.preventDefault();
-          return;
-        }
+    const unlisten = appWindow.onCloseRequested(async (_e) => {
+      // Kill all running PTYs on close — no blocking confirmation
+      for (const sid of runningSessions.current) {
+        invoke("kill_terminal", { sessionId: sid }).catch(() => {});
       }
     });
     return () => { unlisten.then(fn => fn()); };
