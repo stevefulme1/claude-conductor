@@ -289,6 +289,7 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
       </div>
 
       <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} onShowMarketplace={onShowMarketplace} onShowPlugins={onShowPlugins} />
+      <ConfigPanel visible={showConfig} onClose={() => setShowConfig(false)} onShowMarketplace={onShowMarketplace} />
 
       <div style={styles.footer}>
         <div style={styles.footerRow}>
