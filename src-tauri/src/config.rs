@@ -957,6 +957,36 @@ pub fn get_auth_info(server_name: &str) -> Result<AuthInfo, Box<dyn std::error::
         });
     }
 
+    if name_lower.contains("amplitude") || url_lower.contains("amplitude.com") {
+        let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
+            Some(server.command_or_url.clone())
+        } else {
+            None
+        };
+        return Ok(AuthInfo {
+            auth_type: "oauth".into(),
+            has_token: false,
+            token_valid: false,
+            provider: "Amplitude".into(),
+            oauth_url,
+        });
+    }
+
+    if name_lower.contains("figma") || url_lower.contains("figma.com") {
+        let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
+            Some(server.command_or_url.clone())
+        } else {
+            None
+        };
+        return Ok(AuthInfo {
+            auth_type: "oauth".into(),
+            has_token: false,
+            token_valid: false,
+            provider: "Figma".into(),
+            oauth_url,
+        });
+    }
+
     if name_lower.contains("framer") || url_lower.contains("framer.com") {
         let oauth_url = if server.server_type == "http" && !server.command_or_url.is_empty() {
             Some(server.command_or_url.clone())
