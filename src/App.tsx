@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import Terminal from "./components/Terminal";
 import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
+import StatusPanel from "./components/StatusPanel";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta } from "./types";
 
@@ -24,6 +25,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [openedSessions, setOpenedSessions] = useState<SessionMeta[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const [showStatus, setShowStatus] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -161,6 +163,7 @@ export default function App() {
         onNewSession={handleNewSession}
         theme={theme}
         onThemeChange={setTheme}
+        onShowStatus={() => setShowStatus(true)}
       />
       <main
         style={{
@@ -191,6 +194,11 @@ export default function App() {
         ))}
         {!activeSessionId && openedSessions.length === 0 && <EmptyState />}
       </main>
+      <StatusPanel
+        visible={showStatus}
+        onClose={() => setShowStatus(false)}
+        openSessionCount={openedSessions.length}
+      />
     </div>
   );
 }

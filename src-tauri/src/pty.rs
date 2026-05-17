@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter};
 
 const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const FLUSH_THRESHOLD: usize = 32 * 1024;
+const MAX_PENDING: usize = 4 * 1024 * 1024; // 4MB cap for paused output
 
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
@@ -145,10 +146,16 @@ pub fn spawn_pty(
                     let boundary = find_utf8_boundary(&buf, total);
 
                     if boundary > 0 {
-                        if paused_clone.load(Ordering::Relaxed) {
-                            pending.push_str(&String::from_utf8_lossy(&buf[..boundary]));
+                        let text = String::from_utf8_lossy(&buf[..boundary]);
+                        let is_paused = paused_clone.load(Ordering::Relaxed);
+                        pending.push_str(&text);
+                        if is_paused {
+                            // Cap pending buffer to prevent OOM
+                            if pending.len() > MAX_PENDING {
+                                let drain = pending.len() - MAX_PENDING;
+                                pending.drain(..drain);
+                            }
                         } else {
-                            pending.push_str(&String::from_utf8_lossy(&buf[..boundary]));
                             let should_flush = pending.len() >= FLUSH_THRESHOLD
                                 || last_flush.elapsed() >= FLUSH_INTERVAL;
                             if should_flush {
@@ -169,6 +176,16 @@ pub fn spawn_pty(
                     log::debug!("PTY reader error for {}: {}", sid, e);
                     break;
                 }
+            }
+
+            // Flush pending if unpaused and timer expired (handles idle periods)
+            if !paused_clone.load(Ordering::Relaxed) && !pending.is_empty()
+                && last_flush.elapsed() >= FLUSH_INTERVAL
+            {
+                if !flush(&mut pending, &app_clone, &event_name) {
+                    break;
+                }
+                last_flush = Instant::now();
             }
 
             if !carry.is_empty() && carry.len() >= 4 {
@@ -271,6 +288,11 @@ pub fn resume_pty(session_id: &str, app: &AppHandle) -> Result<(), String> {
     // to expect data.
     let _ = app.emit(&format!("pty-resumed-{}", session_id), ());
     Ok(())
+}
+
+pub fn pty_count() -> usize {
+    let guard = PTY_MAP.lock();
+    guard.as_ref().map(|m| m.len()).unwrap_or(0)
 }
 
 pub fn kill_pty(session_id: &str) -> Result<(), String> {

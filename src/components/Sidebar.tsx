@@ -18,6 +18,7 @@ interface Props {
   onNewSession: () => void;
   theme: "system" | "light" | "dark";
   onThemeChange: (theme: "system" | "light" | "dark") => void;
+  onShowStatus?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -57,7 +58,7 @@ function groupSessions(
   return groups;
 }
 
-export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange }: Props) {
+export default function Sidebar({ activeSession, openSessionIds, onSelect, onNewSession, theme, onThemeChange, onShowStatus }: Props) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -312,6 +313,15 @@ export default function Sidebar({ activeSession, openSessionIds, onSelect, onNew
               ) : (
                 <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /><path d="M16 12a4 4 0 0 1-4 4V8a4 4 0 0 1 4 4z" fill="currentColor" /></>
               )}
+            </svg>
+          </button>
+          <button
+            onClick={() => onShowStatus?.()}
+            style={styles.settingsBtn}
+            title="Status"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
           </button>
           <button

@@ -181,7 +181,8 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
         return;
       }
 
-      const inputDisposable = term.onData((data) => {
+      let inputDisposable: { dispose: () => void } | null = null;
+      inputDisposable = term.onData((data) => {
         invoke("write_terminal", {
           sessionId: session.session_id,
           data,
@@ -199,18 +200,25 @@ export default function Terminal({ session, label, visible, onStatusChange }: Pr
       } catch (err) {
         if (!mounted) return;
         setStatus("exited");
-        term.writeln(`\x1b[31mFailed to launch claude: ${err}\x1b[0m`);
+        term.writeln(`\x1b[31mFailed to launch claude: ${stripControl(String(err))}\x1b[0m`);
         term.writeln(
           "\x1b[38;2;102;102;102mMake sure 'claude' is in your PATH.\x1b[0m"
         );
-        inputDisposable.dispose();
+        inputDisposable?.dispose();
+        inputDisposable = null;
       }
+
+      // Store disposable for cleanup
+      const storedDisposable = inputDisposable;
+
+    return storedDisposable;
     }
 
-    start();
+    const disposePromise = start();
 
     return () => {
       mounted = false;
+      disposePromise.then((d) => d?.dispose());
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       themeObserver.disconnect();

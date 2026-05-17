@@ -8,6 +8,8 @@ mod sso;
 use sessions::SessionMeta;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -137,14 +139,40 @@ fn set_session_label(session_id: String, label: String) -> Result<(), String> {
     config::set_session_label(&session_id, &label).map_err(|e| e.to_string())
 }
 
-fn start_digest_timer() {
-    thread::spawn(|| {
-        loop {
+#[tauri::command]
+fn get_status() -> Result<serde_json::Value, String> {
+    let pty_count = {
+        let guard = pty::pty_count();
+        guard
+    };
+    let sessions = sessions::discover_sessions()
+        .map(|s| s.len())
+        .unwrap_or(0);
+
+    let sys_info = serde_json::json!({
+        "active_ptys": pty_count,
+        "discovered_sessions": sessions,
+        "uptime_seconds": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        "pid": std::process::id(),
+    });
+
+    Ok(sys_info)
+}
+
+fn start_digest_timer(shutdown: Arc<AtomicBool>) {
+    thread::spawn(move || {
+        while !shutdown.load(Ordering::Relaxed) {
             match digest::write_digest() {
                 Ok(path) => log::info!("Digest refreshed: {}", path),
                 Err(e) => log::warn!("Digest refresh failed: {}", e),
             }
-            thread::sleep(Duration::from_secs(300));
+            for _ in 0..60 {
+                if shutdown.load(Ordering::Relaxed) { return; }
+                thread::sleep(Duration::from_secs(5));
+            }
         }
     });
 }
@@ -166,7 +194,8 @@ pub fn run() {
                     .build(),
             )?;
 
-            start_digest_timer();
+            let shutdown = Arc::new(AtomicBool::new(false));
+            start_digest_timer(shutdown);
 
             Ok(())
         })
@@ -192,6 +221,7 @@ pub fn run() {
             cancel_sso,
             get_session_labels,
             set_session_label,
+            get_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
