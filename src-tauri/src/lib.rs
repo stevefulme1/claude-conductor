@@ -141,10 +141,7 @@ fn set_session_label(session_id: String, label: String) -> Result<(), String> {
 
 #[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
-    let pty_count = {
-        let guard = pty::pty_count();
-        guard
-    };
+    let pty_count = pty::pty_count();
     let sessions = sessions::discover_sessions()
         .map(|s| s.len())
         .unwrap_or(0);
