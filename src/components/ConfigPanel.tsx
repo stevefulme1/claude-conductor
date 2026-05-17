@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { McpServer, McpStatus, ClaudeConfig } from "../types";
 
 interface Props {
@@ -156,11 +157,12 @@ export default function ConfigPanel({ visible, onClose, onShowMarketplace, onSho
           },
         }
       );
-      const popup = window.open(result.auth_url, "_blank");
-      if (!popup) {
+      try {
+        await shellOpen(result.auth_url);
+      } catch {
         setSsoInProgress(null);
         await invoke("cancel_sso").catch(() => {});
-        setError("Browser blocked the SSO popup. Allow popups and try again.");
+        setError("Failed to open browser for SSO login.");
         return;
       }
     } catch (e) {
