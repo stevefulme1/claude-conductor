@@ -5,6 +5,7 @@ import { FileChange } from "../types";
 interface Props {
   cwd: string;
   visible: boolean;
+  onFileClick?: (filePath: string) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -23,7 +24,7 @@ const STATUS_ICONS: Record<string, string> = {
   copied: "C",
 };
 
-export default function FileChanges({ cwd, visible }: Props) {
+export default function FileChanges({ cwd, visible, onFileClick }: Props) {
   const [changes, setChanges] = useState<FileChange[]>([]);
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -68,7 +69,22 @@ export default function FileChanges({ cwd, visible }: Props) {
           <div style={styles.empty}>No changes detected</div>
         )}
         {changes.map((change, i) => (
-          <div key={`${change.path}-${i}`} style={styles.item}>
+          <div
+            key={`${change.path}-${i}`}
+            style={{
+              ...styles.item,
+              cursor: onFileClick ? "pointer" : "default",
+            }}
+            onClick={() => onFileClick?.(change.path)}
+            onMouseEnter={(e) => {
+              if (onFileClick) {
+                (e.currentTarget as HTMLDivElement).style.background = "var(--bg-tertiary)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLDivElement).style.background = "";
+            }}
+          >
             <span
               style={{
                 ...styles.statusBadge,

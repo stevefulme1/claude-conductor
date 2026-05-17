@@ -8,6 +8,9 @@ import TabBar from "./components/TabBar";
 import EmptyState from "./components/EmptyState";
 import StatusPanel from "./components/StatusPanel";
 import FileChanges from "./components/FileChanges";
+import DiffViewer from "./components/DiffViewer";
+import UsagePanel from "./components/UsagePanel";
+import CheckpointPanel from "./components/CheckpointPanel";
 import SplitPane, { splitPane, removePane, collectSessionIds } from "./components/SplitPane";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
@@ -29,6 +32,9 @@ export default function App() {
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [showStatus, setShowStatus] = useState(false);
   const [showFileChanges, setShowFileChanges] = useState(false);
+  const [showCheckpoints, setShowCheckpoints] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [diffFile, setDiffFile] = useState<string | null>(null);
   const [sessionAgents, setSessionAgents] = useState<Record<string, string>>({});
   const [paneLayout, setPaneLayout] = useState<PaneNode | null>(null);
   const [sessionWorktrees, setSessionWorktrees] = useState<Record<string, string>>({});
@@ -153,8 +159,17 @@ export default function App() {
       runningSessions.current.add(sessionId);
     } else {
       runningSessions.current.delete(sessionId);
+      // Desktop notification when a session completes and the app is not focused
+      if (!document.hasFocus() && "Notification" in window && Notification.permission === "granted") {
+        const session = openedRef.current.find(s => s.session_id === sessionId);
+        const agent = sessionAgents[sessionId] || "claude";
+        const dir = session?.cwd || "unknown directory";
+        new Notification("Session Complete", {
+          body: `${agent} finished in ${dir}`,
+        });
+      }
     }
-  }, []);
+  }, [sessionAgents]);
 
   const handleSplit = useCallback((direction: "horizontal" | "vertical") => {
     const currentId = activeRef.current;
@@ -253,6 +268,13 @@ export default function App() {
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
+  // Feature 2: Desktop Notifications — request permission on launch
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw" }}>
       <Sidebar
@@ -316,11 +338,12 @@ export default function App() {
           ))
         )}
         {activeSession && (
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0, position: "relative" }}>
             <div style={{
               display: "flex",
               justifyContent: "flex-end",
               padding: "2px 8px",
+              gap: 4,
               background: "var(--bg-secondary)",
               borderTop: "1px solid var(--border-subtle)",
             }}>
@@ -336,10 +359,55 @@ export default function App() {
                   border: "none",
                 }}
               >
-                {showFileChanges ? "Hide Changes" : "Show Changes"}
+                {showFileChanges ? "Hide Changes" : "Changes"}
               </button>
+              <button
+                onClick={() => setShowCheckpoints(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showCheckpoints ? "var(--accent)" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+              >
+                {showCheckpoints ? "Hide Checkpoints" : "Checkpoints"}
+              </button>
+              {activeSession.file_path && (
+                <button
+                  onClick={() => setShowUsage(prev => !prev)}
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    color: showUsage ? "var(--accent)" : "var(--text-tertiary)",
+                    cursor: "pointer",
+                    background: "none",
+                    border: "none",
+                  }}
+                >
+                  {showUsage ? "Hide Usage" : "Usage"}
+                </button>
+              )}
             </div>
-            <FileChanges cwd={activeSession.cwd} visible={showFileChanges} />
+            <FileChanges
+              cwd={activeSession.cwd}
+              visible={showFileChanges}
+              onFileClick={(filePath) => setDiffFile(filePath)}
+            />
+            <CheckpointPanel cwd={activeSession.cwd} visible={showCheckpoints} />
+            {activeSession.file_path && (
+              <UsagePanel filePath={activeSession.file_path} visible={showUsage} />
+            )}
+            {diffFile && (
+              <DiffViewer
+                cwd={activeSession.cwd}
+                filePath={diffFile}
+                onClose={() => setDiffFile(null)}
+              />
+            )}
           </div>
         )}
         {!activeSessionId && openedSessions.length === 0 && <EmptyState />}

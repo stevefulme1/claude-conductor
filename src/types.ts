@@ -73,6 +73,22 @@ export interface FileChange {
   staged: boolean;
 }
 
+export interface SessionUsage {
+  message_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number;
+  duration_seconds: number;
+  model: string;
+}
+
+export interface CheckpointInfo {
+  id: string;
+  name: string;
+  timestamp: string;
+  commit_sha: string;
+}
+
 export interface PaneNode {
   type: "split" | "terminal";
   direction?: "horizontal" | "vertical";

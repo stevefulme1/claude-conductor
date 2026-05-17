@@ -1,3 +1,5 @@
+mod analytics;
+mod checkpoints;
 mod config;
 mod digest;
 mod file_tracker;
@@ -163,6 +165,31 @@ fn get_file_changes(cwd: String) -> Result<Vec<file_tracker::FileChange>, String
 }
 
 #[tauri::command]
+fn get_file_diff(cwd: String, file_path: String) -> Result<String, String> {
+    file_tracker::get_file_diff(&cwd, &file_path)
+}
+
+#[tauri::command]
+fn get_session_usage(file_path: String) -> Result<analytics::SessionUsage, String> {
+    analytics::get_session_usage(&file_path)
+}
+
+#[tauri::command]
+fn create_checkpoint(cwd: String, name: String) -> Result<checkpoints::CheckpointInfo, String> {
+    checkpoints::create_checkpoint(&cwd, &name)
+}
+
+#[tauri::command]
+fn list_checkpoints(cwd: String) -> Result<Vec<checkpoints::CheckpointInfo>, String> {
+    checkpoints::list_checkpoints(&cwd)
+}
+
+#[tauri::command]
+fn restore_checkpoint(cwd: String, checkpoint_id: String) -> Result<(), String> {
+    checkpoints::restore_checkpoint(&cwd, &checkpoint_id)
+}
+
+#[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
     let sessions = sessions::discover_sessions()
@@ -245,6 +272,11 @@ pub fn run() {
             list_worktrees,
             remove_worktree,
             get_file_changes,
+            get_file_diff,
+            get_session_usage,
+            create_checkpoint,
+            list_checkpoints,
+            restore_checkpoint,
             get_status,
         ])
         .run(tauri::generate_context!())

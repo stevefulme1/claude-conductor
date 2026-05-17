@@ -125,3 +125,69 @@ pub fn get_file_changes(cwd: &str) -> Result<Vec<FileChange>, String> {
 
     Ok(changes)
 }
+
+/// Get unified diff for a specific file against HEAD.
+pub fn get_file_diff(cwd: &str, file_path: &str) -> Result<String, String> {
+    // Check if this is a git repository
+    let check = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(cwd)
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+
+    if !check.status.success() {
+        return Err("Not a git repository".to_string());
+    }
+
+    // Check if there are any commits
+    let has_commits = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(cwd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if has_commits {
+        // Try staged diff first, then unstaged
+        let staged = Command::new("git")
+            .args(["diff", "--staged", "HEAD", "--", file_path])
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("Failed to run git diff: {e}"))?;
+
+        let staged_text = String::from_utf8_lossy(&staged.stdout).to_string();
+
+        let unstaged = Command::new("git")
+            .args(["diff", "HEAD", "--", file_path])
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("Failed to run git diff: {e}"))?;
+
+        let unstaged_text = String::from_utf8_lossy(&unstaged.stdout).to_string();
+
+        // Return whichever has content (prefer unstaged as it shows current state)
+        if !unstaged_text.trim().is_empty() {
+            return Ok(unstaged_text);
+        }
+        if !staged_text.trim().is_empty() {
+            return Ok(staged_text);
+        }
+    }
+
+    // For untracked files, show entire content as added
+    let full_path = std::path::Path::new(cwd).join(file_path);
+    if full_path.exists() {
+        let content = std::fs::read_to_string(&full_path)
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+        let lines: Vec<&str> = content.lines().collect();
+        let mut diff = format!("--- /dev/null\n+++ b/{}\n@@ -0,0 +1,{} @@\n", file_path, lines.len());
+        for line in &lines {
+            diff.push('+');
+            diff.push_str(line);
+            diff.push('\n');
+        }
+        return Ok(diff);
+    }
+
+    Ok(String::new())
+}
