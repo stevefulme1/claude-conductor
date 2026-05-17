@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import Sidebar from "./components/Sidebar";
@@ -32,12 +31,6 @@ const CIMonitor = lazy(() => import("./components/CIMonitor"));
 const HelpMenu = lazy(() => import("./components/HelpMenu"));
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, SessionTemplate, AgentSuggestion, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
-
-function startDrag(e: React.MouseEvent) {
-  if (e.buttons === 1 && e.detail === 1) {
-    getCurrentWindow().startDragging();
-  }
-}
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -360,16 +353,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewSession, closeSession, handleSplit]);
 
-  useEffect(() => {
-    const appWindow = getCurrentWindow();
-    const unlisten = appWindow.onCloseRequested(async (_e) => {
-      // Fire-and-forget PTY cleanup — don't await, don't block close
-      runningSessions.current.forEach((sid) => {
-        invoke("kill_terminal", { sessionId: sid }).catch(() => {});
-      });
-    });
-    return () => { unlisten.then(fn => fn()); };
-  }, []);
+  // PTY processes are cleaned up automatically when the app process exits.
+  // No onCloseRequested handler — the native close button works without interference.
 
   const handleTemplateSelect = useCallback((template: SessionTemplate) => {
     handleNewSession(template.agent);

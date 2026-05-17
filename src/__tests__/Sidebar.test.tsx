@@ -30,8 +30,10 @@ const mockSessions: SessionMeta[] = [
 describe("Sidebar", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_sessions_fast") return Promise.resolve(mockSessions);
       if (cmd === "list_sessions") return Promise.resolve(mockSessions);
       if (cmd === "get_session_labels") return Promise.resolve({});
+      if (cmd === "get_session_statuses") return Promise.resolve({});
       if (cmd === "get_config") return Promise.resolve({ model: "test", mcp_servers: [], plugins: [], config_paths: [] });
       if (cmd === "verify_mcp") return Promise.resolve({});
       return Promise.resolve(null);
