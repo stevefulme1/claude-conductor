@@ -30,11 +30,14 @@ function timeAgo(dateStr: string): string {
 export default function KanbanBoard({ sessions, labels, sessionAgents, onSelect }: Props) {
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
   const [dragOver, setDragOver] = useState<SessionStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     invoke<Record<string, string>>("get_session_statuses")
       .then((s) => setStatuses(s as Record<string, SessionStatus>))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const setStatus = useCallback(async (sessionId: string, status: SessionStatus) => {
@@ -48,6 +51,14 @@ export default function KanbanBoard({ sessions, labels, sessionAgents, onSelect 
 
   const sessionsForColumn = (status: SessionStatus) =>
     sessions.filter((s) => (statuses[s.session_id] || "planning") === status);
+
+  if (loading) {
+    return (
+      <div style={{ ...styles.board, alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading board...</span>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.board}>

@@ -162,7 +162,13 @@ export default function HelpMenu({ visible, onClose }: Props) {
     setUpdateLoading(true);
     setUpdateError(null);
     try {
-      const info = await invoke<UpdateInfo>("check_for_updates");
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Update check timed out. Check your internet connection.")), 15000)
+      );
+      const info = await Promise.race([
+        invoke<UpdateInfo>("check_for_updates"),
+        timeout,
+      ]);
       setUpdateInfo(info);
     } catch (e) {
       setUpdateError(String(e));
