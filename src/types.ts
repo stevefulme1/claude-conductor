@@ -221,6 +221,23 @@ export interface PluginManifest {
   hooks: string[];
 }
 
+// Tier 3: CI Monitor
+export interface CIStatus {
+  repo: string;
+  branch: string;
+  status: string;
+  conclusion: string | null;
+  url: string;
+  workflow_name: string;
+}
+
+// Tier 3: Spatial Canvas card position
+export interface CanvasCardPosition {
+  sessionId: string;
+  x: number;
+  y: number;
+}
+
 // P3: Git Visualization
 export interface GitLogEntry {
   hash: string;

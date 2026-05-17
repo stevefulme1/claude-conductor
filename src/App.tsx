@@ -24,6 +24,9 @@ import SessionReplay from "./components/SessionReplay";
 import CompliancePanel from "./components/CompliancePanel";
 import BenchmarksPanel from "./components/BenchmarksPanel";
 import PluginManager from "./components/PluginManager";
+import VoiceInput from "./components/VoiceInput";
+import SpatialCanvas from "./components/SpatialCanvas";
+import CIMonitor from "./components/CIMonitor";
 import { useTheme } from "./hooks/useTheme";
 import { SessionMeta, SessionTemplate, AgentSuggestion, DEFAULT_AGENT_PRESETS, PaneNode } from "./types";
 
@@ -63,6 +66,8 @@ export default function App() {
   const [showBenchmarks, setShowBenchmarks] = useState(false);
   const [showPlugins, setShowPlugins] = useState(false);
   const [complianceEnabled, setComplianceEnabled] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
+  const [showCanvas, setShowCanvas] = useState(false);
   const runningSessions = useRef(new Set<string>());
   const openedRef = useRef(openedSessions);
   const activeRef = useRef(activeSessionId);
@@ -266,6 +271,16 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.shiftKey && e.key === "v") {
+        e.preventDefault();
+        setShowVoice(prev => !prev);
+        return;
+      }
+      if (meta && e.shiftKey && e.code === "Space") {
+        e.preventDefault();
+        setShowCanvas(prev => !prev);
+        return;
+      }
       if (meta && e.shiftKey && e.key === "c") {
         e.preventDefault();
         setShowChains(prev => !prev);
@@ -401,7 +416,24 @@ export default function App() {
           onClose={closeSession}
           onReorder={handleReorder}
         />
-        {showKanban ? (
+        {/* Tier 3: Voice Input */}
+        <VoiceInput
+          sessionId={activeSessionId}
+          visible={showVoice}
+          onToggle={() => {}}
+        />
+        {showCanvas ? (
+          <SpatialCanvas
+            sessions={openedSessions}
+            labels={labels}
+            sessionAgents={sessionAgents}
+            onSelect={(session) => {
+              handleSessionSelect(session);
+              setShowCanvas(false);
+            }}
+            onClose={() => setShowCanvas(false)}
+          />
+        ) : showKanban ? (
           <KanbanBoard
             sessions={openedSessions}
             labels={labels}
@@ -558,6 +590,37 @@ export default function App() {
               >
                 Benchmarks
               </button>
+              <button
+                onClick={() => setShowVoice(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showVoice ? "#ff3b30" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+                title="Voice Input (Cmd+Shift+V)"
+              >
+                Voice
+              </button>
+              <button
+                onClick={() => setShowCanvas(prev => !prev)}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: "var(--radius-sm)",
+                  color: showCanvas ? "var(--accent)" : "var(--text-tertiary)",
+                  cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                }}
+                title="Spatial Canvas (Cmd+Shift+Space)"
+              >
+                Canvas
+              </button>
+              <CIMonitor cwd={activeSession.cwd} />
               {complianceEnabled && (
                 <span
                   style={{

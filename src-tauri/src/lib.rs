@@ -1,6 +1,7 @@
 mod analytics;
 mod chaining;
 mod checkpoints;
+mod ci_monitor;
 mod code_search;
 mod compliance;
 mod config;
@@ -262,6 +263,22 @@ fn save_export(dest_path: String, content: String) -> Result<(), String> {
     sharing::save_export(&dest_path, &content)
 }
 
+// Tier 3: CI Monitor
+#[tauri::command]
+fn get_ci_status(cwd: String) -> Result<ci_monitor::CIStatus, String> {
+    ci_monitor::get_ci_status(&cwd)
+}
+
+#[tauri::command]
+fn get_ci_logs(cwd: String) -> Result<String, String> {
+    ci_monitor::get_ci_logs(&cwd)
+}
+
+#[tauri::command]
+fn rerun_ci(cwd: String) -> Result<(), String> {
+    ci_monitor::rerun_ci(&cwd)
+}
+
 #[tauri::command]
 fn get_status() -> Result<serde_json::Value, String> {
     let pty_count = pty::pty_count();
@@ -492,6 +509,9 @@ pub fn run() {
             get_performance_benchmarks,
             discover_plugins,
             load_plugin_config,
+            get_ci_status,
+            get_ci_logs,
+            rerun_ci,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
